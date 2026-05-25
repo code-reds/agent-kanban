@@ -1,0 +1,493 @@
+/* ========================================
+   Common UI Styles - Agent Kanban Web UI
+   ========================================
+   Shared styles extracted from Vue components
+   to ensure homogenous styling across the app.
+   ======================================== */
+
+/* Design Tokens */
+:root {
+  --save-btn-hover: #eff6ff;
+  --danger-hover: #fef2f2;
+  --danger-border: #fecaca;
+  --danger-hover-bg: #dc2626;
+  --success-bg: #f0fdf4;
+  --success-border: #bbf7d0;
+  --success-text: #166534;
+  --primary-light: rgba(57, 102, 190, 0.15);
+  --btn-primary-hover: #447ce3;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+}
+
+/* Card */
+.card {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 24px;
+  margin-bottom: 20px;
+}
+
+.card h2 {
+  margin: 0 0 20px 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+/* Section Description */
+.section-description {
+  margin: 0 0 20px 0;
+  font-size: 14px;
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+}
+
+/* Buttons */
+.btn {
+  padding: 8px 16px;
+  border: 1px solid var(--btn-border, var(--color-border));
+  border-radius: 6px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: 14px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.btn:hover {
+  background-color: var(--btn-hover, var(--color-bg));
+}
+
+.btn--primary {
+  background-color: var(--color-primary);
+  color: #ffffff;
+  border-color: var(--color-primary);
+}
+
+.btn--primary:hover {
+  background-color: var(--btn-primary-hover, #2563eb);
+}
+
+.btn--primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn--sm {
+  padding: 6px 12px;
+  font-size: 13px;
+}
+
+.edit-btn,
+.save-btn,
+.cancel-btn,
+.delete-btn {
+  padding: 8px 16px;
+  border: 1px solid var(--btn-border, var(--color-border));
+  border-radius: 6px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.edit-btn:hover,
+.save-btn:hover,
+.cancel-btn:hover {
+  background-color: var(--btn-hover, var(--color-bg));
+}
+
+.save-btn {
+  color: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+.save-btn:hover {
+  background-color: var(--save-btn-hover, #eff6ff);
+}
+
+.cancel-btn {
+  color: var(--color-text-secondary);
+}
+
+.delete-btn {
+  color: var(--color-danger);
+  border-color: var(--danger-border, #fecaca);
+}
+
+.delete-btn:hover {
+  background-color: var(--danger-hover, #fef2f2);
+}
+
+.danger-btn {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 6px;
+  background-color: var(--color-danger);
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.danger-btn:hover {
+  background-color: var(--danger-hover-bg, #dc2626);
+}
+
+.danger-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Danger Zone */
+.danger-zone {
+  border-color: var(--danger-border, #fecaca);
+}
+
+.danger-zone h2 {
+  color: var(--color-danger);
+}
+
+.danger-zone p {
+  color: var(--color-text-secondary);
+  font-size: 14px;
+  line-height: 1.5;
+  margin-bottom: 16px;
+}
+
+/* Form Group */
+.form-group {
+  margin-bottom: 20px;
+}
+
+.form-group label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.form-group input,
+.form-group textarea,
+.form-group select {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  font-size: 14px;
+  font-family: inherit;
+  outline: none;
+  color: var(--color-text);
+  background-color: var(--color-bg);
+}
+
+.form-group input:focus,
+.form-group textarea:focus,
+.form-group select:focus {
+  border-color: var(--color-primary);
+}
+
+.form-group select {
+  width: 100%;
+  cursor: pointer;
+}
+
+.form-group label:has(> input[type="checkbox"]) {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: normal;
+  cursor: pointer;
+}
+
+/* Form Row */
+.form-row {
+  display: flex;
+  gap: 16px;
+}
+
+.form-row .form-group {
+  flex: 1;
+}
+
+/* Input with Button */
+.input-with-btn {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+/* Display Value */
+.display-value {
+  flex: 1;
+  padding: 8px 0;
+  font-size: 15px;
+  color: var(--color-text);
+  cursor: pointer;
+  border-radius: 6px;
+}
+
+.display-value:hover {
+  background-color: var(--color-bg);
+}
+
+/* Slug Display */
+.slug-display {
+  padding: 8px 12px;
+  background-color: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  font-family: monospace;
+  font-size: 14px;
+  color: var(--color-text);
+}
+
+/* Success Message */
+.success-message {
+  margin-top: 16px;
+  padding: 12px 16px;
+  background-color: var(--success-bg, #f0fdf4);
+  border: 1px solid var(--success-border, #bbf7d0);
+  border-radius: 6px;
+  color: var(--success-text, #166534);
+  font-size: 14px;
+}
+
+/* Table */
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+table th {
+  text-align: left;
+  padding: 10px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 2px solid var(--color-border);
+}
+
+table td {
+  padding: 10px 12px;
+  font-size: 14px;
+  color: var(--color-text);
+  border-bottom: 1px solid var(--color-border);
+  vertical-align: middle;
+}
+
+table tr:last-child td {
+  border-bottom: none;
+}
+
+/* Cell Input */
+.cell-input {
+  width: 100%;
+  padding: 4px 8px;
+  border: 1px solid var(--color-primary);
+  border-radius: 4px;
+  font-size: 14px;
+  font-family: inherit;
+  outline: none;
+  color: var(--color-text);
+  background-color: var(--color-bg);
+  box-sizing: border-box;
+}
+
+.cell-input:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+
+.cell-input--number {
+  width: 70px;
+}
+
+.cell-input--wide {
+  width: 200px;
+}
+
+/* Mono Font */
+.mono {
+  font-family: var(--font-mono, 'JetBrains Mono', 'Fira Code', monospace);
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+/* Actions Cell */
+.actions-cell {
+  white-space: nowrap;
+  width: 1%;
+}
+
+/* Checkbox Label */
+.checkbox-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.checkbox-label input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+}
+
+/* Empty State */
+.empty-state {
+  padding: 24px 0;
+  text-align: center;
+  color: var(--color-text-secondary);
+  font-size: 14px;
+}
+
+/* Loading/Error States */
+.loading-state,
+.error-state {
+  padding: 40px;
+  text-align: center;
+}
+
+.loading-state p {
+  color: var(--color-text-secondary);
+}
+
+.error-state p {
+  color: var(--color-danger);
+  margin-bottom: 12px;
+}
+
+.error-state button {
+  padding: 8px 20px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-surface);
+  cursor: pointer;
+  color: var(--color-danger);
+}
+
+/* Modal */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+}
+
+.modal {
+  background-color: var(--color-surface);
+  border-radius: 12px;
+  padding: 24px;
+  max-width: 440px;
+  width: 90%;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+}
+
+.modal h2 {
+  margin: 0 0 12px 0;
+  font-size: 18px;
+  color: var(--color-text);
+}
+
+.modal p {
+  margin: 0 0 12px 0;
+  font-size: 14px;
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+}
+
+.modal-warning {
+  color: var(--color-danger) !important;
+  font-weight: 500;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 20px;
+}
+
+/* Add Form (for creating new items) */
+.add-column-form,
+.add-transition-form {
+  margin-bottom: 24px;
+  padding-bottom: 24px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.add-column-form h3,
+.add-transition-form h3 {
+  margin: 0 0 16px 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.add-column-form .form-group,
+.add-transition-form .form-group {
+  margin-bottom: 12px;
+}
+
+.add-column-form input,
+.add-transition-form input,
+.add-column-form select,
+.add-transition-form select {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  font-size: 14px;
+  color: var(--color-text);
+  background-color: var(--color-bg);
+  box-sizing: border-box;
+  font-family: inherit;
+}
+
+.add-column-form input:focus,
+.add-transition-form input:focus,
+.add-column-form select:focus,
+.add-transition-form select:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+.add-column-form .btn,
+.add-transition-form .btn {
+  margin-top: 8px;
+}
+
+/* Copy Button (small) */
+.copy-btn-sm {
+  padding: 4px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background: var(--color-surface);
+  font-size: 11px;
+  cursor: pointer;
+  color: var(--color-primary);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.copy-btn-sm:hover {
+  background-color: var(--color-bg);
+}
+
+.copy-btn-sm.copied {
+  color: var(--success-text, #166534);
+  border-color: var(--success-text, #166534);
+}

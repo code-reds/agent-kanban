@@ -1,0 +1,3206 @@
+openapi: "3.1.0"
+info:
+  title: Agent Kanban REST API
+  description: REST API for managing Kanban projects, tickets, columns, workflows, roles, agent communications (conversations), and global settings. Each MCP server process is associated with a role that determines permissions.
+  version: "1.0.0"
+  contact:
+    name: Agent Kanban Team
+
+servers:
+  - url: http://localhost:3000/api/v1
+    description: Local development server
+
+paths:
+  # ==========================================================================
+  # PROJECTS
+  # ==========================================================================
+  /projects:
+    get:
+      summary: List all projects
+      tags:
+        - Projects
+      parameters:
+        - name: q
+          in: query
+          description: Search by project name or slug
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of projects
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectListResponse'
+    post:
+      summary: Create a new project
+      tags:
+        - Projects
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProjectRequest'
+      responses:
+        '201':
+          description: Project created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+
+  /projects/{slug}:
+    get:
+      summary: Get project details
+      tags:
+        - Projects
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Project details with columns, roles, and workflow
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectDetailResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      summary: Update project
+      tags:
+        - Projects
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProjectRequest'
+      responses:
+        '200':
+          description: Project updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      summary: Delete project (cascade deletes all associated data)
+      tags:
+        - Projects
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Project deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ==========================================================================
+  # COLUMNS
+  # ==========================================================================
+  /projects/{slug}/columns:
+    get:
+      summary: List columns for a project
+      tags:
+        - Columns
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of columns
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ColumnListResponse'
+    post:
+      summary: Add column to a project
+      tags:
+        - Columns
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateColumnRequest'
+      responses:
+        '201':
+          description: Column created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ColumnResponse'
+
+  /projects/{slug}/columns/{columnId}:
+    patch:
+      summary: Update a column
+      tags:
+        - Columns
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: columnId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateColumnRequest'
+      responses:
+        '200':
+          description: Column updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ColumnResponse'
+    delete:
+      summary: Delete a column (fails if non-empty or default)
+      tags:
+        - Columns
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: columnId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Column deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '409':
+          $ref: '#/components/responses/ConflictError'
+
+  # ==========================================================================
+  # WORKFLOW (project-level)
+  # ==========================================================================
+  /projects/{slug}/workflow:
+    get:
+      summary: Get workflow transitions and access rules for a project
+      tags:
+        - Workflow
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Workflow configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowResponse'
+    post:
+      summary: Add a workflow transition
+      tags:
+        - Workflow
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTransitionRequest'
+      responses:
+        '201':
+          description: Transition added
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransitionResponse'
+
+  /projects/{slug}/workflow/{transitionId}:
+    delete:
+      summary: Remove a workflow transition
+      tags:
+        - Workflow
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: transitionId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Transition removed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+    patch:
+      summary: Update a workflow transition's properties
+      tags:
+        - Workflow
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: transitionId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTransitionRequest'
+      responses:
+        '200':
+          description: Transition updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransitionResponse'
+
+  # ==========================================================================
+  # ACCESS RULES (project-level)
+  # ==========================================================================
+  /projects/{slug}/access-rules:
+    get:
+      summary: Get all access rules for a project
+      tags:
+        - Access Rules
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of access rules
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccessRulesListResponse'
+    patch:
+      summary: Bulk update access rules
+      tags:
+        - Access Rules
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - rules
+              properties:
+                rules:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/AccessRule'
+      responses:
+        '200':
+          description: Access rules updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccessRulesListResponse'
+
+  # ==========================================================================
+  # ROLES (project-level)
+  # ==========================================================================
+  /projects/{slug}/roles:
+    get:
+      summary: Get all roles with access levels for a project
+      tags:
+        - Roles
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of roles
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoleListResponse'
+
+  /projects/{slug}/roles/{roleId}:
+    patch:
+      summary: Update a role (name/description)
+      tags:
+        - Roles
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: roleId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateRoleRequest'
+      responses:
+        '200':
+          description: Role updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoleResponse'
+
+  # ==========================================================================
+  # ROLES-COLUMNS (project-level)
+  # ==========================================================================
+  /projects/{slug}/roles-columns:
+    get:
+      summary: Get combined project and global roles_columns mappings
+      tags:
+        - Roles
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of roles_columns mappings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RolesColumnsListResponse'
+    post:
+      summary: Create a project-specific roles_columns override
+      tags:
+        - Roles
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRolesColumnRequest'
+      responses:
+        '201':
+          description: Roles-column mapping created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RolesColumnResponse'
+
+  /projects/{slug}/roles-columns/{roleId}:
+    patch:
+      summary: Update a project-specific roles_columns override
+      tags:
+        - Roles
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: roleId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateRolesColumnRequest'
+      responses:
+        '200':
+          description: Roles-column mapping updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RolesColumnResponse'
+    delete:
+      summary: Delete a project-specific roles_columns override
+      tags:
+        - Roles
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: roleId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Roles-column mapping deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted:
+                    type: boolean
+
+  # ==========================================================================
+  # TICKETS
+  # ==========================================================================
+  /projects/{slug}/tickets:
+    get:
+      summary: List tickets with filters
+      tags:
+        - Tickets
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: column
+          in: query
+          description: Filter by column slug
+          required: false
+          schema:
+            type: string
+        - name: priority
+          in: query
+          description: Filter by priority (1=urgent, 2=high, 3=medium, 4=low, 5=trivial)
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 5
+        - name: labels
+          in: query
+          description: Comma-separated labels filter (any match)
+          required: false
+          schema:
+            type: string
+        - name: parent_id
+          in: query
+          description: Filter by parent ticket ID (returns sub-tickets)
+          required: false
+          schema:
+            type: integer
+        - name: page
+          in: query
+          description: Page number
+          required: false
+          schema:
+            type: integer
+            default: 1
+        - name: per_page
+          in: query
+          description: "Items per page (default: 20, max: 1000)"
+          required: false
+          schema:
+            type: integer
+            default: 20
+            maximum: 1000
+        - name: sort_by
+          in: query
+          description: "Sort field (default: created_at)"
+          required: false
+          schema:
+            type: string
+            enum:
+              - priority
+              - created_at
+              - updated_at
+              - title
+            default: created_at
+        - name: sort_order
+          in: query
+          description: Sort direction
+          required: false
+          schema:
+            type: string
+            enum:
+              - asc
+              - desc
+            default: desc
+        - name: mode
+          in: query
+          description: "Filter mode. 'not-blocked': unblocked only. 'top-level-tickets': parent tickets only"
+          required: false
+          schema:
+            type: string
+            enum:
+              - not-blocked
+              - top-level-tickets
+        - name: all_tickets
+          in: query
+          description: Include all tickets (overrides column filter)
+          required: false
+          schema:
+            type: boolean
+            default: false
+        - name: done_limit
+          in: query
+          description: Limit the number of done column tickets returned
+          required: false
+          schema:
+            type: integer
+        - name: filter_blocked
+          in: query
+          description: Exclude blocked, closed, and human_feedback tickets (optimized query)
+          required: false
+          schema:
+            type: boolean
+        - name: include_closed
+          in: query
+          description: "Whether to include closed tickets (default: true)"
+          required: false
+          schema:
+            type: boolean
+            default: true
+      responses:
+        '200':
+          description: List of tickets
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketListResponse'
+    post:
+      summary: Create a new ticket
+      tags:
+        - Tickets
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTicketRequest'
+      responses:
+        '201':
+          description: Ticket created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketResponse'
+
+  /projects/{slug}/tickets/{ticketId}:
+    get:
+      summary: Get ticket details
+      tags:
+        - Tickets
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: ticketId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Ticket details with comments, dependencies, and history
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketDetailResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      summary: Update a ticket
+      tags:
+        - Tickets
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: ticketId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTicketRequest'
+      responses:
+        '200':
+          description: Ticket updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      summary: Delete a ticket
+      tags:
+        - Tickets
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: ticketId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: role_id
+          in: query
+          description: Role ID of the actor performing the deletion
+          required: false
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Ticket deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      deleted:
+                        type: boolean
+                      ticket_id:
+                        type: integer
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /projects/{slug}/tickets/{ticketId}/transitions:
+    get:
+      summary: Get allowed transitions for a ticket
+      tags:
+        - Tickets
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: ticketId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Allowed transitions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransitionsListResponse'
+
+  /projects/{slug}/tickets/{ticketId}/move:
+    post:
+      summary: Move a ticket to another column
+      tags:
+        - Tickets
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: ticketId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MoveTicketRequest'
+      responses:
+        '200':
+          description: Ticket moved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      moved:
+                        type: boolean
+                      ticket_id:
+                        type: integer
+                      to_column:
+                        type: string
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/WorkflowError'
+
+  # ==========================================================================
+  # TICKET COMMENTS
+  # ==========================================================================
+  /projects/{slug}/tickets/{ticketId}/comments:
+    post:
+      summary: Add a comment to a ticket
+      tags:
+        - Tickets
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: ticketId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddCommentRequest'
+      responses:
+        '201':
+          description: Comment added
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommentResponse'
+
+  /projects/{slug}/tickets/{ticketId}/comments/{commentId}:
+    patch:
+      summary: Update a comment
+      tags:
+        - Tickets
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: ticketId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: commentId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCommentRequest'
+      responses:
+        '200':
+          description: Comment updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommentResponse'
+    delete:
+      summary: Delete a comment
+      tags:
+        - Tickets
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: ticketId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: commentId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                role_id:
+                  type: integer
+      responses:
+        '200':
+          description: Comment deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      deleted:
+                        type: boolean
+                      comment_id:
+                        type: integer
+
+  # ==========================================================================
+  # TICKET DEPENDENCIES
+  # ==========================================================================
+  /projects/{slug}/tickets/{ticketId}/dependencies:
+    get:
+      summary: Get ticket dependencies grouped by type
+      tags:
+        - Tickets
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: ticketId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Dependencies grouped by type
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DependenciesResponse'
+    delete:
+      summary: Remove a dependency (query parameters)
+      tags:
+        - Tickets
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: ticketId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: depends_on_id
+          in: query
+          required: true
+          description: The dependency ticket ID
+          schema:
+            type: integer
+        - name: relation_type
+          in: query
+          required: true
+          description: The dependency relation type
+          schema:
+            type: string
+            enum:
+              - blocked_by
+              - depends_on
+              - related
+      responses:
+        '200':
+          description: Dependency removed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      removed:
+                        type: boolean
+                      ticket_id:
+                        type: integer
+                      depends_on_id:
+                        type: integer
+        '400':
+          $ref: '#/components/responses/ValidationError'
+
+  /projects/{slug}/tickets/{ticketId}/dependencies/{relationType}/{depId}:
+    post:
+      summary: Add a dependency (path-based)
+      tags:
+        - Tickets
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: ticketId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: relationType
+          in: path
+          required: true
+          description: The dependency relation type
+          schema:
+            type: string
+            enum:
+              - blocked_by
+              - depends_on
+              - related
+        - name: depId
+          in: path
+          required: true
+          description: The dependency ticket ID
+          schema:
+            type: integer
+      responses:
+        '201':
+          description: Dependency added
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      added:
+                        type: boolean
+                      ticket_id:
+                        type: integer
+                      depends_on_id:
+                        type: integer
+                      relation_type:
+                        type: string
+    delete:
+      summary: Remove a dependency (path-based)
+      tags:
+        - Tickets
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: ticketId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: relationType
+          in: path
+          required: true
+          schema:
+            type: string
+            enum:
+              - blocked_by
+              - depends_on
+              - related
+        - name: depId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Dependency removed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      removed:
+                        type: boolean
+                      ticket_id:
+                        type: integer
+                      depends_on_id:
+                        type: integer
+
+  # ==========================================================================
+  # CONVERSATIONS
+  # ==========================================================================
+  /projects/{slug}/conversations:
+    get:
+      summary: List conversations for a project
+      tags:
+        - Conversations
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of conversations
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConversationListResponse'
+    post:
+      summary: Create a new conversation (or return existing)
+      tags:
+        - Conversations
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - role_id
+              properties:
+                role_id:
+                  type: integer
+                  description: The role ID to create/find a conversation for
+      responses:
+        '201':
+          description: Conversation created or returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConversationResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+
+  /projects/{slug}/conversations/{conversationId}:
+    get:
+      summary: Get a conversation with messages
+      tags:
+        - Conversations
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: conversationId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Conversation with messages
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConversationDetailResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /projects/{slug}/conversations/{conversationId}/messages:
+    post:
+      summary: Send a message in a conversation
+      tags:
+        - Conversations
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: conversationId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendMessageRequest'
+      responses:
+        '201':
+          description: Message sent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+
+  /projects/{slug}/messages/unread:
+    get:
+      summary: Fetch unread messages (auto-marks as read)
+      tags:
+        - Conversations
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          description: "Max messages to return (defaults to 1)"
+          required: false
+          schema:
+            type: integer
+            default: 1
+        - name: fetched_until
+          in: query
+          description: Only fetch messages after this message ID
+          required: false
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Unread messages
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnreadMessagesResponse'
+
+  # ==========================================================================
+  # TOKENS (Human User only)
+  # ==========================================================================
+  /projects/{slug}/tokens:
+    get:
+      summary: List all API tokens for a project (Human User only)
+      tags:
+        - Tokens
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: role
+          in: query
+          description: Caller role for permission checks
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of tokens
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenListResponse'
+        '403':
+          $ref: '#/components/responses/PermissionDenied'
+    post:
+      summary: Create a new API token (Human User only)
+      tags:
+        - Tokens
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: role
+          in: query
+          description: Caller role for permission checks
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTokenRequest'
+      responses:
+        '201':
+          description: Token created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '403':
+          $ref: '#/components/responses/PermissionDenied'
+
+  /projects/{slug}/tokens/{tokenId}:
+    delete:
+      summary: Revoke an API token (Human User only)
+      tags:
+        - Tokens
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: tokenId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: role
+          in: query
+          description: Caller role for permission checks
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Token revoked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '403':
+          $ref: '#/components/responses/PermissionDenied'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/ConflictError'
+
+  /projects/{slug}/tokens/{tokenId}/secret:
+    get:
+      summary: Get plaintext token value (Human User only)
+      tags:
+        - Tokens
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: tokenId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: role
+          in: query
+          description: Caller role for permission checks
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Token secret
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenSecretResponse'
+        '403':
+          $ref: '#/components/responses/PermissionDenied'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/ConflictError'
+
+  # ==========================================================================
+  # OPENCODE CONFIG
+  # ==========================================================================
+  /projects/{slug}/opencode-config:
+    post:
+      summary: Generate opencode configuration JSON (Human User only)
+      tags:
+        - Tokens
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: role
+          in: query
+          description: Caller role for permission checks
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                serverPort:
+                  type: integer
+                serverHost:
+                  type: string
+      responses:
+        '200':
+          description: Generated opencode configuration
+          content:
+            application/json:
+              schema:
+                type: object
+        '403':
+          $ref: '#/components/responses/PermissionDenied'
+
+  /projects/{slug}/opencode-config-zip:
+    post:
+      summary: Generate opencode configuration as a downloadable ZIP file (Human User only)
+      tags:
+        - Tokens
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: role
+          in: query
+          description: Caller role for permission checks
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                serverPort:
+                  type: integer
+                serverHost:
+                  type: string
+      responses:
+        '200':
+          description: ZIP file download
+          content:
+            application/zip:
+              schema:
+                type: string
+                format: binary
+        '403':
+          $ref: '#/components/responses/PermissionDenied'
+
+  # ==========================================================================
+  # SSE (Server-Sent Events)
+  # ==========================================================================
+  /projects/{slug}/sse:
+    get:
+      summary: Server-Sent Events endpoint for real-time ticket updates
+      tags:
+        - SSE
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: SSE connection for real-time events
+          content:
+            text/event-stream:
+              schema:
+                type: string
+
+  # ==========================================================================
+  # GLOBAL SETTINGS
+  # ==========================================================================
+  /global-settings/columns:
+    get:
+      summary: List all global columns
+      tags:
+        - Global Settings
+      responses:
+        '200':
+          description: List of global columns
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GlobalColumnListResponse'
+    post:
+      summary: Create a global column
+      tags:
+        - Global Settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateGlobalColumnRequest'
+      responses:
+        '201':
+          description: Global column created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GlobalColumnResponse'
+
+  /global-settings/columns/{columnId}:
+    patch:
+      summary: Update a global column
+      tags:
+        - Global Settings
+      parameters:
+        - name: columnId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateGlobalColumnRequest'
+      responses:
+        '200':
+          description: Global column updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GlobalColumnResponse'
+    delete:
+      summary: Delete a global column
+      tags:
+        - Global Settings
+      parameters:
+        - name: columnId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Global column deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+
+  /global-settings/workflows:
+    get:
+      summary: List all global workflow transitions
+      tags:
+        - Global Settings
+      responses:
+        '200':
+          description: List of global workflow transitions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GlobalWorkflowListResponse'
+    post:
+      summary: Create a global workflow transition
+      tags:
+        - Global Settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateGlobalWorkflowRequest'
+      responses:
+        '201':
+          description: Global workflow transition created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GlobalWorkflowResponse'
+
+  /global-settings/workflows/{workflowId}:
+    patch:
+      summary: Update a global workflow transition
+      tags:
+        - Global Settings
+      parameters:
+        - name: workflowId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateGlobalWorkflowRequest'
+      responses:
+        '200':
+          description: Global workflow transition updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GlobalWorkflowResponse'
+    delete:
+      summary: Delete a global workflow transition
+      tags:
+        - Global Settings
+      parameters:
+        - name: workflowId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Global workflow transition deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+
+  /global-settings/access-rules:
+    get:
+      summary: List all global access rules
+      tags:
+        - Global Settings
+      responses:
+        '200':
+          description: List of global access rules
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GlobalAccessRulesListResponse'
+    patch:
+      summary: Bulk update global access rules
+      tags:
+        - Global Settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - rules
+              properties:
+                rules:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/AccessRule'
+      responses:
+        '200':
+          description: Global access rules updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GlobalAccessRulesListResponse'
+
+  /global-settings/roles:
+    get:
+      summary: List all global roles
+      tags:
+        - Global Settings
+      responses:
+        '200':
+          description: List of global roles
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GlobalRoleListResponse'
+    post:
+      summary: Create a new global role
+      tags:
+        - Global Settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateGlobalRoleRequest'
+      responses:
+        '201':
+          description: Global role created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GlobalRoleResponse'
+
+  /global-settings/roles/{roleId}:
+    patch:
+      summary: Update a global role
+      tags:
+        - Global Settings
+      parameters:
+        - name: roleId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateGlobalRoleRequest'
+      responses:
+        '200':
+          description: Global role updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GlobalRoleResponse'
+    delete:
+      summary: Delete a global role
+      tags:
+        - Global Settings
+      parameters:
+        - name: roleId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Global role deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+
+  /global-settings/roles-columns:
+    get:
+      summary: List all global roles_columns mappings
+      tags:
+        - Global Settings
+      responses:
+        '200':
+          description: List of global roles_columns
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GlobalRolesColumnsListResponse'
+    post:
+      summary: Create a global roles_columns mapping
+      tags:
+        - Global Settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateGlobalRolesColumnRequest'
+      responses:
+        '201':
+          description: Global roles-column mapping created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GlobalRolesColumnResponse'
+
+  /global-settings/roles-columns/{roleId}:
+    patch:
+      summary: Update a global roles_columns mapping
+      tags:
+        - Global Settings
+      parameters:
+        - name: roleId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateGlobalRolesColumnRequest'
+      responses:
+        '200':
+          description: Global roles-column mapping updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GlobalRolesColumnResponse'
+    delete:
+      summary: Delete a global roles_columns mapping
+      tags:
+        - Global Settings
+      parameters:
+        - name: roleId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Global roles-column mapping deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+
+  /global-settings/project-seed:
+    get:
+      summary: Get project seed data (default columns, roles, workflows)
+      tags:
+        - Global Settings
+      responses:
+        '200':
+          description: Project seed data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+
+  /global-settings/reset:
+    post:
+      summary: Reset all global settings to defaults
+      tags:
+        - Global Settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Global settings reset
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  deleted:
+                    type: boolean
+
+components:
+  schemas:
+    # ----- Standard Response Wrappers -----
+    StandardSuccessResponse:
+      type: object
+      required:
+        - success
+        - data
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          nullable: true
+        error:
+          type: string
+          nullable: true
+          example: null
+
+    StandardErrorResponse:
+      type: object
+      required:
+        - success
+        - error
+        - code
+      properties:
+        success:
+          type: boolean
+          example: false
+        data:
+          nullable: true
+        error:
+          type: string
+          example: "Resource not found"
+        code:
+          type: string
+          example: "NOT_FOUND"
+
+    # ----- Project -----
+    Project:
+      type: object
+      required:
+        - id
+        - slug
+        - name
+        - description
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: integer
+          example: 1
+        slug:
+          type: string
+          example: "agent-kanban"
+        name:
+          type: string
+          example: "Agent Kanban"
+        description:
+          type: string
+          example: "Kanban board for AI agent collaboration"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CreateProjectRequest:
+      type: object
+      required:
+        - name
+        - slug
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        slug:
+          type: string
+          minLength: 1
+          maxLength: 255
+          pattern: "^[a-z0-9]+(-[a-z0-9]+)*$"
+        description:
+          type: string
+          maxLength: 2000
+
+    UpdateProjectRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        description:
+          type: string
+          maxLength: 2000
+
+    # ----- Column -----
+    Column:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 8
+        project_id:
+          type: integer
+          example: 1
+        slug:
+          type: string
+          description: URL-friendly column identifier
+          example: "todo"
+        name:
+          type: string
+          description: Human-readable column name
+          example: "To Do"
+        order:
+          type: integer
+          minimum: 0
+          example: 0
+        is_global:
+          type: boolean
+          example: false
+        is_default:
+          type: boolean
+          example: true
+
+    CreateColumnRequest:
+      type: object
+      required:
+        - slug
+        - name
+        - order
+      properties:
+        slug:
+          type: string
+          minLength: 1
+          maxLength: 255
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        order:
+          type: integer
+          minimum: 0
+        is_default:
+          type: boolean
+          default: false
+
+    UpdateColumnRequest:
+      type: object
+      properties:
+        slug:
+          type: string
+          minLength: 1
+          maxLength: 255
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        order:
+          type: integer
+          minimum: 0
+
+    # ----- Global Column -----
+    GlobalColumn:
+      allOf:
+        - $ref: '#/components/schemas/Column'
+
+    CreateGlobalColumnRequest:
+      type: object
+      required:
+        - slug
+        - name
+        - order
+      properties:
+        slug:
+          type: string
+          minLength: 1
+          maxLength: 255
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        order:
+          type: integer
+          minimum: 0
+        is_default:
+          type: boolean
+          default: false
+
+    UpdateGlobalColumnRequest:
+      type: object
+      properties:
+        slug:
+          type: string
+          minLength: 1
+          maxLength: 255
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        order:
+          type: integer
+          minimum: 0
+
+    # ----- Role -----
+    Role:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        name:
+          type: string
+          example: "Human User"
+        description:
+          type: string
+          example: "Full permissions for human users"
+        access_level:
+          type: string
+          enum:
+            - full
+            - admin
+            - write
+            - read
+          example: "full"
+
+    CreateRoleRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        description:
+          type: string
+          maxLength: 2000
+        access_level:
+          type: string
+          enum:
+            - full
+            - admin
+            - write
+            - read
+          default: "read"
+
+    UpdateRoleRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        description:
+          type: string
+          maxLength: 2000
+
+    # ----- Global Role -----
+    GlobalRole:
+      allOf:
+        - $ref: '#/components/schemas/Role'
+
+    CreateGlobalRoleRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        description:
+          type: string
+          maxLength: 2000
+        access_level:
+          type: string
+          enum:
+            - full
+            - admin
+            - write
+            - read
+          default: "read"
+
+    UpdateGlobalRoleRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        description:
+          type: string
+          maxLength: 2000
+
+    # ----- Roles-Columns -----
+    RolesColumn:
+      type: object
+      properties:
+        id:
+          type: integer
+        role_id:
+          type: integer
+        project_id:
+          type: integer
+          nullable: true
+        column_id:
+          type: integer
+          nullable: true
+        is_default:
+          type: integer
+          example: 0
+
+    CreateRolesColumnRequest:
+      type: object
+      required:
+        - role_id
+        - column_id
+      properties:
+        role_id:
+          type: integer
+        column_id:
+          type: integer
+        is_default:
+          type: integer
+          default: 0
+
+    UpdateRolesColumnRequest:
+      type: object
+      properties:
+        column_id:
+          type: integer
+        is_default:
+          type: integer
+          default: 0
+
+    # ----- Global Roles-Columns -----
+    GlobalRolesColumn:
+      allOf:
+        - $ref: '#/components/schemas/RolesColumn'
+
+    CreateGlobalRolesColumnRequest:
+      type: object
+      required:
+        - role_id
+      properties:
+        role_id:
+          type: integer
+        column_id:
+          type: integer
+          nullable: true
+        is_default:
+          type: boolean
+          default: false
+
+    UpdateGlobalRolesColumnRequest:
+      type: object
+      properties:
+        column_id:
+          type: integer
+          nullable: true
+        is_default:
+          type: boolean
+          default: false
+
+    # ----- Workflow Transition -----
+    WorkflowTransition:
+      type: object
+      properties:
+        id:
+          type: integer
+        project_id:
+          type: integer
+          nullable: true
+        column_from:
+          type: integer
+        column_to:
+          type: integer
+        requires_comment:
+          type: boolean
+        is_global:
+          type: boolean
+          default: false
+        entire_ticket_group:
+          type: boolean
+          default: false
+        from_slug:
+          type: string
+          nullable: true
+        to_slug:
+          type: string
+          nullable: true
+        allowed_role_ids:
+          type: string
+          nullable: true
+          description: Comma-separated role IDs
+
+    CreateTransitionRequest:
+      type: object
+      required:
+        - column_from
+        - column_to
+      properties:
+        column_from:
+          type: string
+          description: Source column slug
+        column_to:
+          type: string
+          description: Target column slug
+        requires_comment:
+          type: boolean
+          default: false
+        entire_ticket_group:
+          type: boolean
+          default: false
+        allowed_roles:
+          type: array
+          description: Comma-separated role IDs or array of role IDs
+          items:
+            type: string
+
+    UpdateTransitionRequest:
+      type: object
+      properties:
+        requires_comment:
+          type: boolean
+        entire_ticket_group:
+          type: boolean
+        allowed_roles:
+          type: array
+          items:
+            type: string
+
+    # ----- Global Workflow -----
+    GlobalWorkflowTransition:
+      allOf:
+        - $ref: '#/components/schemas/WorkflowTransition'
+
+    CreateGlobalWorkflowRequest:
+      type: object
+      required:
+        - column_from
+        - column_to
+      properties:
+        column_from:
+          type: string
+        column_to:
+          type: string
+        requires_comment:
+          type: boolean
+          default: false
+        entire_ticket_group:
+          type: boolean
+          default: false
+        allowed_roles:
+          type: array
+          items:
+            type: string
+
+    UpdateGlobalWorkflowRequest:
+      type: object
+      properties:
+        requires_comment:
+          type: boolean
+        entire_ticket_group:
+          type: boolean
+        allowed_roles:
+          type: array
+          items:
+            type: string
+
+    # ----- Access Rule -----
+    AccessRule:
+      type: object
+      properties:
+        id:
+          type: integer
+        project_id:
+          type: integer
+          nullable: true
+        column_id:
+          type: integer
+        role_id:
+          type: integer
+        action_type:
+          type: string
+          enum:
+            - create
+            - edit
+            - delete
+            - move
+        is_global:
+          type: boolean
+          default: false
+        column_slug:
+          type: string
+          nullable: true
+
+    # ----- Ticket -----
+    Ticket:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        project_id:
+          type: integer
+          example: 1
+        parent_id:
+          type: integer
+          nullable: true
+          example: null
+        column:
+          type: string
+          description: Column slug
+          example: "todo"
+        column_id:
+          type: integer
+        title:
+          type: string
+          example: "Implement feature X"
+        description:
+          type: string
+          example: "Description of feature X"
+        labels:
+          type: array
+          items:
+            type: string
+        priority:
+          type: integer
+          minimum: 1
+          maximum: 5
+          example: 2
+        estimate:
+          type: number
+          nullable: true
+          description: Time estimate (hours or story points)
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        closed_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_by_role_id:
+          type: integer
+
+    CreateTicketRequest:
+      type: object
+      required:
+        - title
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 255
+        description:
+          type: string
+          default: ""
+        column:
+          type: string
+          description: Target column slug
+        priority:
+          type: integer
+          minimum: 1
+          maximum: 5
+          default: 2
+        labels:
+          type: array
+          items:
+            type: string
+        estimate:
+          type: number
+          nullable: true
+        parent_id:
+          type: integer
+          nullable: true
+          description: Parent ticket ID for sub-tasks
+
+    UpdateTicketRequest:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 255
+        description:
+          type: string
+        priority:
+          type: integer
+          minimum: 1
+          maximum: 5
+        labels:
+          type: array
+          items:
+            type: string
+        estimate:
+          type: number
+          nullable: true
+        parent_id:
+          type: integer
+          nullable: true
+
+    # ----- Comment -----
+    Comment:
+      type: object
+      properties:
+        id:
+          type: integer
+        ticket_id:
+          type: integer
+        author_role_id:
+          type: integer
+        content:
+          type: string
+        action_type:
+          type: string
+          nullable: true
+        action_details:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+    AddCommentRequest:
+      type: object
+      required:
+        - content
+      properties:
+        content:
+          type: string
+          minLength: 1
+        role_id:
+          type: integer
+
+    UpdateCommentRequest:
+      type: object
+      required:
+        - content
+      properties:
+        content:
+          type: string
+          minLength: 1
+        role_id:
+          type: integer
+
+    # ----- Transition (per-ticket) -----
+    TicketTransition:
+      type: object
+      properties:
+        from_column:
+          type: string
+        to_column:
+          type: string
+        requires_comment:
+          type: boolean
+        comment:
+          type: string
+          nullable: true
+
+    # ----- Move Ticket -----
+    MoveTicketRequest:
+      type: object
+      required:
+        - to_column
+      properties:
+        to_column:
+          type: string
+          description: Target column slug
+        comment:
+          type: string
+          maxLength: 5000
+        role_id:
+          type: integer
+
+    # ----- Dependency -----
+    Dependency:
+      type: object
+      properties:
+        id:
+          type: integer
+        ticket_id:
+          type: integer
+        depends_on_id:
+          type: integer
+        relation_type:
+          type: string
+          enum:
+            - blocked_by
+            - depends_on
+            - related
+
+    # ----- Status History -----
+    StatusHistoryEntry:
+      type: object
+      properties:
+        id:
+          type: integer
+        ticket_id:
+          type: integer
+        from_column_id:
+          type: integer
+        to_column_id:
+          type: integer
+        actor_role_id:
+          type: integer
+        comment_id:
+          type: integer
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+    # ----- Conversation -----
+    Conversation:
+      type: object
+      properties:
+        id:
+          type: integer
+        project_id:
+          type: integer
+        from_role_id:
+          type: integer
+        to_role_id:
+          type: integer
+        from_role_name:
+          type: string
+          nullable: true
+        to_role_name:
+          type: string
+          nullable: true
+        last_message_at:
+          type: string
+          format: date-time
+        unread_count:
+          type: integer
+          default: 0
+        message_count:
+          type: integer
+
+    Message:
+      type: object
+      properties:
+        id:
+          type: integer
+        conversation_id:
+          type: integer
+        sender_role_id:
+          type: integer
+        sender_role_name:
+          type: string
+          nullable: true
+        content:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        fetched_until_id:
+          type: integer
+
+    SendMessageRequest:
+      type: object
+      required:
+        - content
+      properties:
+        content:
+          type: string
+          minLength: 1
+        sender_role_id:
+          type: integer
+
+    # ----- Token -----
+    Token:
+      type: object
+      properties:
+        id:
+          type: integer
+        token_hash:
+          type: string
+        project_id:
+          type: integer
+        role_id:
+          type: integer
+        role_name:
+          type: string
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+          nullable: true
+        is_active:
+          type: boolean
+
+    CreateTokenRequest:
+      type: object
+      required:
+        - role_id
+      properties:
+        role_id:
+          type: integer
+        description:
+          type: string
+          maxLength: 500
+        expires_in:
+          type: integer
+          description: Token lifetime in hours
+
+    # ----- Response Objects -----
+
+    # Project responses
+    ProjectListResponse:
+      allOf:
+        - $ref: '#/components/schemas/StandardSuccessResponse'
+        - type: object
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/Project'
+
+    ProjectResponse:
+      allOf:
+        - $ref: '#/components/schemas/StandardSuccessResponse'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/Project'
+
+    ProjectDetailResponse:
+      allOf:
+        - $ref: '#/components/schemas/StandardSuccessResponse'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                id:
+                  type: integer
+                slug:
+                  type: string
+                name:
+                  type: string
+                description:
+                  type: string
+                columns:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/Column'
+                roles:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/Role'
+                workflow:
+                  type: object
+                  properties:
+                    transitions:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/WorkflowTransition'
+                    access_rules:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/AccessRule'
+                created_at:
+                  type: string
+                  format: date-time
+                updated_at:
+                  type: string
+                  format: date-time
+
+    # Column responses
+    ColumnListResponse:
+      allOf:
+        - $ref: '#/components/schemas/StandardSuccessResponse'
+        - type: object
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/Column'
+
+    ColumnResponse:
+      allOf:
+        - $ref: '#/components/schemas/StandardSuccessResponse'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/Column'
+
+    # Global Column responses
+    GlobalColumnListResponse:
+      allOf:
+        - $ref: '#/components/schemas/StandardSuccessResponse'
+        - type: object
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/GlobalColumn'
+
+    GlobalColumnResponse:
+      allOf:
+        - $ref: '#/components/schemas/StandardSuccessResponse'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/GlobalColumn'
+
+    # Role responses
+    RoleListResponse:
+      allOf:
+        - $ref: '#/components/schemas/StandardSuccessResponse'
+        - type: object
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/Role'
+
+    RoleResponse:
+      allOf:
+        - $ref: '#/components/schemas/StandardSuccessResponse'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/Role'
+
+    # Global Role responses
+    GlobalRoleListResponse:
+      allOf:
+        - $ref: '#/components/schemas/StandardSuccessResponse'
+        - type: object
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/GlobalRole'
+
+    GlobalRoleResponse:
+      allOf:
+        - $ref: '#/components/schemas/StandardSuccessResponse'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/GlobalRole'
+
+    # Roles-Column responses
+    RolesColumnsListResponse:
+      allOf:
+        - $ref: '#/components/schemas/StandardSuccessResponse'
+        - type: object
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/RolesColumn'
+
+    RolesColumnResponse:
+      allOf:
+        - $ref: '#/components/schemas/StandardSuccessResponse'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/RolesColumn'
+
+    GlobalRolesColumnsListResponse:
+      allOf:
+        - $ref: '#/components/schemas/StandardSuccessResponse'
+        - type: object
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/GlobalRolesColumn'
+
+    GlobalRolesColumnResponse:
+      allOf:
+        - $ref: '#/components/schemas/StandardSuccessResponse'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/GlobalRolesColumn'
+
+    # Workflow responses
+    WorkflowResponse:
+      allOf:
+        - $ref: '#/components/schemas/StandardSuccessResponse'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                transitions:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/WorkflowTransition'
+                access_rules:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/AccessRule'
+
+    TransitionResponse:
+      allOf:
+        - $ref: '#/components/schemas/StandardSuccessResponse'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/WorkflowTransition'
+
+    # Global Workflow responses
+    GlobalWorkflowListResponse:
+      allOf:
+        - $ref: '#/components/schemas/StandardSuccessResponse'
+        - type: object
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/GlobalWorkflowTransition'
+
+    GlobalWorkflowResponse:
+      allOf:
+        - $ref: '#/components/schemas/StandardSuccessResponse'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/GlobalWorkflowTransition'
+
+    # Access Rules responses
+    AccessRulesListResponse:
+      allOf:
+        - $ref: '#/components/schemas/StandardSuccessResponse'
+        - type: object
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/AccessRule'
+
+    GlobalAccessRulesListResponse:
+      allOf:
+        - $ref: '#/components/schemas/StandardSuccessResponse'
+        - type: object
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/AccessRule'
+
+    # Ticket responses
+    TicketListResponse:
+      allOf:
+        - $ref: '#/components/schemas/StandardSuccessResponse'
+        - type: object
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/Ticket'
+            total:
+              type: integer
+              description: Total number of matching tickets
+            done_total:
+              type: integer
+              description: Total number of done tickets
+
+    TicketResponse:
+      allOf:
+        - $ref: '#/components/schemas/StandardSuccessResponse'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/Ticket'
+
+    TicketDetailResponse:
+      allOf:
+        - $ref: '#/components/schemas/StandardSuccessResponse'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                id:
+                  type: integer
+                project_id:
+                  type: integer
+                parent_id:
+                  type: integer
+                  nullable: true
+                column:
+                  type: string
+                column_id:
+                  type: integer
+                title:
+                  type: string
+                description:
+                  type: string
+                labels:
+                  type: array
+                  items:
+                    type: string
+                priority:
+                  type: integer
+                  minimum: 1
+                  maximum: 5
+                estimate:
+                  type: number
+                  nullable: true
+                is_blocked:
+                  type: boolean
+                blocking_ticket_ids:
+                  type: array
+                  items:
+                    type: integer
+                comments:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/Comment'
+                status_history:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/StatusHistoryEntry'
+                created_at:
+                  type: string
+                  format: date-time
+                updated_at:
+                  type: string
+                  format: date-time
+                closed_at:
+                  type: string
+                  format: date-time
+                  nullable: true
+
+    TransitionsListResponse:
+      allOf:
+        - $ref: '#/components/schemas/StandardSuccessResponse'
+        - type: object
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/TicketTransition'
+
+    CommentResponse:
+      allOf:
+        - $ref: '#/components/schemas/StandardSuccessResponse'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/Comment'
+
+    DependenciesResponse:
+      allOf:
+        - $ref: '#/components/schemas/StandardSuccessResponse'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                blocked_by:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/Dependency'
+                depends_on:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/Dependency'
+                related:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/Dependency'
+
+    # Conversation responses
+    ConversationListResponse:
+      allOf:
+        - $ref: '#/components/schemas/StandardSuccessResponse'
+        - type: object
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/Conversation'
+
+    ConversationResponse:
+      allOf:
+        - $ref: '#/components/schemas/StandardSuccessResponse'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/Conversation'
+
+    ConversationDetailResponse:
+      allOf:
+        - $ref: '#/components/schemas/StandardSuccessResponse'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                conversation:
+                  $ref: '#/components/schemas/Conversation'
+                messages:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/Message'
+
+    MessageResponse:
+      allOf:
+        - $ref: '#/components/schemas/StandardSuccessResponse'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/Message'
+
+    UnreadMessagesResponse:
+      allOf:
+        - $ref: '#/components/schemas/StandardSuccessResponse'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                messages:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/Message'
+                fetched_until_id:
+                  type: integer
+
+    # Token responses
+    TokenListResponse:
+      allOf:
+        - $ref: '#/components/schemas/StandardSuccessResponse'
+        - type: object
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/Token'
+
+    TokenResponse:
+      allOf:
+        - $ref: '#/components/schemas/StandardSuccessResponse'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/Token'
+
+    TokenSecretResponse:
+      allOf:
+        - $ref: '#/components/schemas/StandardSuccessResponse'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                token:
+                  type: string
+                id:
+                  type: integer
+
+    # Success/Error responses
+    SuccessResponse:
+      allOf:
+        - $ref: '#/components/schemas/StandardSuccessResponse'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                deleted:
+                  type: boolean
+
+  responses:
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/StandardErrorResponse'
+    PermissionDenied:
+      description: Role lacks permission
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/StandardErrorResponse'
+    ValidationError:
+      description: Invalid parameters
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/StandardErrorResponse'
+    ConflictError:
+      description: Conflict (e.g., column has tickets, circular dependency)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/StandardErrorResponse'
+    WorkflowError:
+      description: Workflow rules prevent the action
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/StandardErrorResponse'
