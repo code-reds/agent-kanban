@@ -1,0 +1,42 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+dist-bundle/
+
+# Version control
+.git/
+.gitignore
+
+# Environment and secrets
+.env
+.env.*
+
+# Coverage reports
+coverage/
+
+# Logs
+*.log
+
+# Opencode config
+.opencode/
+
+# IDE and editor files
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Docker files (not needed in image)
+Dockerfile
+.dockerignore
+
+# Documentation and other non-essential files
+*.md
+LICENSE
+*.md
+openapi.yaml
+playwright.config.ts
