@@ -1,0 +1,12 @@
+node_modules/
+dist/
+dist-bundle/
+*.db
+*.db-wal
+*.db-shm
+data/
+.env
+coverage/
+*.log
+.opencode/**
+opencode.json
