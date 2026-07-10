@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { mount, VueWrapper } from '@vue/test-utils';
 import { createPinia, setActivePinia } from 'pinia';
+import { reactive } from 'vue';
 import { createRouter, createWebHashHistory, useRoute } from 'vue-router';
 import Conversations from '@/views/Conversations.vue';
 import * as conversationApi from '@/stores/conversations';
@@ -22,6 +23,16 @@ vi.mock('vue-router', async (importOriginal) => {
   };
 });
 
+vi.mock('@/composables/useSSE', () => ({
+  useSSE: vi.fn(() => ({
+    connected: { value: false },
+    connect: vi.fn(),
+    disconnect: vi.fn(),
+  })),
+}));
+
+import { useSSE } from '@/composables/useSSE';
+
 import { useRoute as vueRouterUseRoute } from 'vue-router';
 
 function createMockConversationStore(overrides: Partial<conversationApi.ConversationStore> = {}): conversationApi.ConversationStore {
@@ -32,6 +43,8 @@ function createMockConversationStore(overrides: Partial<conversationApi.Conversa
     loading: false,
     error: null,
     unreadCount: 0,
+    unreadIndex: -1,
+    isHumanConversation: false,
     messageInput: '',
     fetchConversations: vi.fn(),
     fetchUnread: vi.fn(),
@@ -40,6 +53,11 @@ function createMockConversationStore(overrides: Partial<conversationApi.Conversa
     deleteConversation: vi.fn(),
     addMessage: vi.fn(),
     sendMessage: vi.fn(),
+    markAsRead: vi.fn(),
+    handleConversationCreated: vi.fn(),
+    handleConversationMessageSent: vi.fn(),
+    handleConversationReadUpdated: vi.fn(),
+    handleConversationDeleted: vi.fn(),
     ...overrides,
   } as unknown as conversationApi.ConversationStore;
 }
@@ -214,7 +232,7 @@ describe('Conversations', () => {
         {
           id: 1, conversation_id: 1, sender_role_id: 1,
           sender_role_name: 'Human', content: 'Hello', created_at: '2024-01-01T00:00:00Z',
-          fetched_until_id: 1,
+          last_read_message_id: 1,
         },
       ],
     };
@@ -241,7 +259,7 @@ describe('Conversations', () => {
           id: 1, conversation_id: 1, sender_role_id: 1,
           sender_role_name: 'Human', content: '**bold text** and *italic*',
           created_at: '2024-01-01T00:00:00Z',
-          fetched_until_id: 1,
+          last_read_message_id: 1,
         },
       ],
     };
@@ -328,5 +346,171 @@ describe('Conversations', () => {
     const { wrapper } = createWrapper();
     expect(wrapper.find('.message-pane').exists()).toBe(true);
     wrapper.unmount();
+  });
+
+  describe('SSE integration', () => {
+    it('SSE connects on mount', () => {
+      const { wrapper } = createWrapper();
+      const sseMock = (useSSE as any).mock.results[0].value;
+      expect(sseMock.connect).toHaveBeenCalled();
+      wrapper.unmount();
+    });
+
+    it('SSE disconnects on unmount', () => {
+      const { wrapper } = createWrapper();
+      const sseMock = (useSSE as any).mock.results[0].value;
+      wrapper.unmount();
+      expect(sseMock.disconnect).toHaveBeenCalled();
+    });
+
+    it('SSE reconnects on slug change', async () => {
+      const routeParams = reactive({ slug: 'project-a' });
+      const mockConvStore = createMockConversationStore();
+      const mockProjectStore = createMockProjectStore();
+
+      const router = createRouter({
+        history: createWebHashHistory(),
+        routes: [{ path: '/projects/:slug/conversations', name: 'conversations', component: { template: '<div/>' } }],
+      });
+
+      setActivePinia(createPinia());
+      (vueRouterUseRoute as any).mockReturnValue({ params: routeParams });
+      (conversationApi.useConversationStore as any).mockReturnValue(mockConvStore);
+      (projectApi.useProjectStore as any).mockReturnValue(mockProjectStore);
+
+      const wrapper = mount(Conversations, {
+        global: {
+          plugins: [router, createPinia()],
+          stubs: {
+            RouterLink: {
+              props: ['to'],
+              template: '<a :href="typeof to === \'string\' ? to : to.path"><slot /></a>',
+            },
+          },
+        },
+      });
+
+      const sseMock = (useSSE as any).mock.results[0].value;
+
+      // Reset mock call tracking (connect was called during mount)
+      sseMock.connect.mockClear();
+      sseMock.disconnect.mockClear();
+
+      // Change the route slug reactively
+      routeParams.slug = 'project-b';
+
+      // Wait for Vue reactivity to process the watch
+      await vi.waitFor(() => {
+        expect(sseMock.disconnect).toHaveBeenCalled();
+        expect(sseMock.connect).toHaveBeenCalled();
+      }, { timeout: 1000 });
+
+      wrapper.unmount();
+    });
+
+    it('new conversation appears without refresh', async () => {
+      // Use the real store directly (bypass mock)
+      const { useConversationStore: realUseStore } = await vi.importActual<typeof import('@/stores/conversations')>('@/stores/conversations');
+      const store = realUseStore();
+
+      const createdConv = {
+        id: 1, project_id: 1, from_role_id: 1, to_role_id: 2,
+        from_role_name: 'Human', to_role_name: 'Agent',
+      };
+      store.handleConversationCreated(createdConv);
+
+      expect(store.conversations).toHaveLength(1);
+      expect(store.conversations[0].id).toBe(1);
+    });
+
+    it('new message appears without refresh', async () => {
+      const { useConversationStore: realUseStore } = await vi.importActual<typeof import('@/stores/conversations')>('@/stores/conversations');
+      const store = realUseStore();
+
+      const conv = {
+        id: 1, project_id: 1, from_role_id: 1, to_role_id: 2,
+        from_role_name: 'Human', to_role_name: 'Agent',
+        messages: [],
+      };
+      store.activeConversation = conv;
+
+      const newMessage = {
+        id: 10, conversation_id: 1, sender_role_id: 2,
+        sender_role_name: 'Agent', content: 'Hello back!',
+        created_at: '2024-01-01T00:01:00Z', last_read_message_id: 0,
+      };
+      store.handleConversationMessageSent(1, newMessage);
+
+      expect(store.activeConversation?.messages).toHaveLength(1);
+      expect(store.activeConversation?.messages[0].content).toBe('Hello back!');
+    });
+
+    it('no duplicate messages on repeated SSE event', async () => {
+      const { useConversationStore: realUseStore } = await vi.importActual<typeof import('@/stores/conversations')>('@/stores/conversations');
+      const store = realUseStore();
+
+      const conv = {
+        id: 1, project_id: 1, from_role_id: 1, to_role_id: 2,
+        from_role_name: 'Human', to_role_name: 'Agent',
+        messages: [],
+      };
+      store.activeConversation = conv;
+
+      const msg = {
+        id: 10, conversation_id: 1, sender_role_id: 2,
+        sender_role_name: 'Agent', content: 'Hello!',
+        created_at: '2024-01-01T00:01:00Z', last_read_message_id: 0,
+      };
+
+      // Send the same message twice via SSE
+      store.handleConversationMessageSent(1, msg);
+      store.handleConversationMessageSent(1, msg);
+
+      expect(store.activeConversation?.messages).toHaveLength(1);
+    });
+
+    it('read state updates via SSE', async () => {
+      const { useConversationStore: realUseStore } = await vi.importActual<typeof import('@/stores/conversations')>('@/stores/conversations');
+      const store = realUseStore();
+
+      const conv = {
+        id: 1, project_id: 1, from_role_id: 1, to_role_id: 2,
+        from_role_name: 'Human', to_role_name: 'Agent',
+        messages: [
+          {
+            id: 1, conversation_id: 1, sender_role_id: 1,
+            sender_role_name: 'Human', content: 'Hi',
+            created_at: '2024-01-01T00:00:00Z', last_read_message_id: 0,
+          },
+          {
+            id: 2, conversation_id: 1, sender_role_id: 2,
+            sender_role_name: 'Agent', content: 'Hello',
+            created_at: '2024-01-01T00:01:00Z', last_read_message_id: 0,
+          },
+        ],
+      };
+      store.activeConversation = conv;
+
+      // Simulate read update via SSE
+      store.handleConversationReadUpdated(1, 2);
+
+      expect(store.lastReadMessageId).toBe(2);
+    });
+
+    it('deleted conversation removed from list', async () => {
+      const { useConversationStore: realUseStore } = await vi.importActual<typeof import('@/stores/conversations')>('@/stores/conversations');
+      const store = realUseStore();
+
+      const conv = {
+        id: 1, project_id: 1, from_role_id: 1, to_role_id: 2,
+        from_role_name: 'Human', to_role_name: 'Agent',
+      };
+      store.conversations = [conv];
+
+      // Simulate deletion via SSE
+      store.handleConversationDeleted(1);
+
+      expect(store.conversations).toHaveLength(0);
+    });
   });
 });

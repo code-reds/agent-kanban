@@ -14,6 +14,7 @@ import {
   sendMessage,
   fetchUnread,
   createConversation,
+  markConversationAsRead,
   type CreateConversationPayload,
 } from '../api';
 
@@ -23,10 +24,31 @@ export const useConversationStore = defineStore('conversations', () => {
   const messageInput = ref('');
   const loading = ref(false);
   const error = ref<string | null>(null);
-  const fetchedUntilId = ref(0);
+  const lastReadMessageId = ref(0);
   const unreadCount = ref(0);
 
   const activeConversationId = computed(() => activeConversation.value?.id ?? null);
+
+  /**
+   * Index in activeConversation.messages where unread messages start.
+   * Returns -1 if no unread messages or no active conversation.
+   */
+  const unreadIndex = computed(() => {
+    if (!activeConversation.value || !activeConversation.value.messages.length) return -1;
+    // lastReadMessageId tracks the last message ID read at read time
+    // Unread = messages after lastReadMessageId
+    return activeConversation.value.messages.findIndex(
+      (m: Message) => m.id > lastReadMessageId.value
+    );
+  });
+
+  /**
+   * Check if the active conversation involves the Human User (role_id 1).
+   */
+  const isHumanConversation = computed(() => {
+    if (!activeConversation.value) return false;
+    return activeConversation.value.from_role_id === 1 || activeConversation.value.to_role_id === 1;
+  });
 
   async function fetchConversations(projectSlug: string): Promise<void> {
     loading.value = true;
@@ -56,9 +78,10 @@ export const useConversationStore = defineStore('conversations', () => {
       const res: ApiResponse<ConversationWithMessages> = await getConversation(projectSlug, conversationId);
       if (res.success && res.data) {
         activeConversation.value = res.data;
-        fetchedUntilId.value = res.data.messages.length > 0
+        lastReadMessageId.value = res.data.messages.length > 0
           ? res.data.messages[res.data.messages.length - 1].id
           : 0;
+        unreadCount.value = 0;
       } else {
         error.value = res.error ?? 'Failed to fetch conversation';
       }
@@ -97,6 +120,11 @@ export const useConversationStore = defineStore('conversations', () => {
               messages: [...activeConversation.value.messages, res.data],
             };
           }
+          // Update read cursor — user has seen their own message
+          lastReadMessageId.value = Math.max(
+            lastReadMessageId.value,
+            res.data.id
+          );
         }
         return true;
       } else {
@@ -118,7 +146,6 @@ export const useConversationStore = defineStore('conversations', () => {
     try {
       const res: ApiResponse<UnreadResponse> = await fetchUnread(projectSlug, {
         limit: 50,
-        fetched_until: fetchedUntilId.value,
       });
       if (res.success && res.data) {
         if (activeConversation.value && res.data.messages.length > 0) {
@@ -127,7 +154,7 @@ export const useConversationStore = defineStore('conversations', () => {
             ...activeConversation.value,
             messages: updatedMessages,
           };
-          fetchedUntilId.value = res.data.fetched_until_id;
+          lastReadMessageId.value = res.data.last_read_message_id;
         }
         if (res.data.messages.length > 0) {
           unreadCount.value += res.data.messages.length;
@@ -138,9 +165,68 @@ export const useConversationStore = defineStore('conversations', () => {
     }
   }
 
+  /**
+    * Mark all unread messages as read by setting lastReadMessageId to the last message ID
+    * and persisting to the backend.
+    */
+   async function markAsRead(projectSlug: string, conversationId: number): Promise<boolean> {
+     // Update local state immediately for responsiveness
+      if (activeConversation.value && activeConversation.value.messages.length) {
+        lastReadMessageId.value = activeConversation.value.messages[activeConversation.value.messages.length - 1].id;
+       unreadCount.value = 0;
+     }
+
+     // Persist to backend
+     try {
+       const res: ApiResponse<{ marked_as_read: boolean }> = await markConversationAsRead(projectSlug, conversationId);
+       return res.success;
+     } catch {
+       return false;
+     }
+   }
+
+  function handleConversationCreated(conversation: Conversation): void {
+    const exists = conversations.value.some((c: Conversation) => c.id === conversation.id);
+    if (!exists) {
+      conversations.value.push(conversation);
+    }
+  }
+
+  function handleConversationMessageSent(conversationId: number, message: Message): void {
+    if (activeConversation.value?.id === conversationId) {
+      const messageExists = activeConversation.value.messages.some((m: Message) => m.id === message.id);
+      if (!messageExists) {
+        activeConversation.value = {
+          ...activeConversation.value,
+          messages: [...activeConversation.value.messages, message],
+        };
+      }
+      lastReadMessageId.value = Math.max(lastReadMessageId.value, message.id);
+    } else {
+      unreadCount.value += 1;
+    }
+  }
+
+  function handleConversationReadUpdated(conversationId: number, newLastReadMessageId: number): void {
+    if (activeConversation.value?.id === conversationId) {
+      lastReadMessageId.value = newLastReadMessageId;
+      if (activeConversation.value.messages.every((m: Message) => m.id <= newLastReadMessageId)) {
+        unreadCount.value = 0;
+      }
+    }
+  }
+
+  function handleConversationDeleted(conversationId: number): void {
+    conversations.value = conversations.value.filter((c: Conversation) => c.id !== conversationId);
+    if (activeConversation.value?.id === conversationId) {
+      activeConversation.value = null;
+      lastReadMessageId.value = 0;
+    }
+  }
+
   function clearActive(): void {
     activeConversation.value = null;
-    fetchedUntilId.value = 0;
+    lastReadMessageId.value = 0;
   }
 
   function setUnreadCount(count: number): void {
@@ -207,17 +293,24 @@ export const useConversationStore = defineStore('conversations', () => {
     messageInput,
     loading,
     error,
-    fetchedUntilId,
+    lastReadMessageId,
     unreadCount,
+    unreadIndex,
+    isHumanConversation,
     activeConversationId,
     fetchConversations,
     selectConversation,
     sendMessage: sendMessageAction,
     fetchUnread: fetchUnreadAction,
+    markAsRead,
     clearActive,
     setUnreadCount,
     createConversation: createConversationAction,
     conversationExistsWithRole,
     findExistingConversation,
+    handleConversationCreated,
+    handleConversationMessageSent,
+    handleConversationReadUpdated,
+    handleConversationDeleted,
   };
 });

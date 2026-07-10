@@ -39,11 +39,11 @@ You can only create, edit, and delete tickets in the `todo` and create them `imp
 1. `list_tickets({ mode: 'todo-list' })` to see active tickets
 2. `get_ticket({ id: N })` to read full details
 3. If needed: spawn an "explore" subagent for codebase context
-4. Design architecture → document in markdown (components, interfaces, data models)
-   - Update `ARCHITECTURE.md` with each change (exact filename, no `ARCHITECTURE_*.md`)
+4. Design architecture
 5. Update top-level ticket if needed
 6. For larger tickets: `create_ticket({ parent_id: N })` to add new subtasks
-   - Choose task complexity suitable for agents with 150k token context
+   - Choose task complexity suitable for agents with 150k token context   
+   - If only one subtask is required: update the top-level ticket instead of creating children
 7. Add requirements, test criteria, quality gates to each sub-ticket
 8. Reference architecture/requirements docs in sub-ticket descriptions where reasonable
 9. Use `add_dependency` to add `blocked_by` relationships when tasks must be completed in a defined order

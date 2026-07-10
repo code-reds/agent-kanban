@@ -11,6 +11,12 @@ export const TICKET_COMMENT_ADDED = 'ticket.comment_added';
 export const TICKET_DEPENDENCY_ADDED = 'ticket.dep_added';
 export const TICKET_DEPENDENCY_REMOVED = 'ticket.dep_removed';
 
+// Conversation event types
+export const CONVERSATION_CREATED = 'conversation.created';
+export const CONVERSATION_MESSAGE_SENT = 'conversation.message_sent';
+export const CONVERSATION_READ_UPDATED = 'conversation.read_updated';
+export const CONVERSATION_DELETED = 'conversation.deleted';
+
 /**
  * Map of event names to their SSE-formatted string representation.
  */
@@ -21,7 +27,11 @@ export type TicketEventType =
   | typeof TICKET_DELETED
   | typeof TICKET_COMMENT_ADDED
   | typeof TICKET_DEPENDENCY_ADDED
-  | typeof TICKET_DEPENDENCY_REMOVED;
+  | typeof TICKET_DEPENDENCY_REMOVED
+  | typeof CONVERSATION_CREATED
+  | typeof CONVERSATION_MESSAGE_SENT
+  | typeof CONVERSATION_READ_UPDATED
+  | typeof CONVERSATION_DELETED;
 
 /**
  * Metadata for a registered SSE client connection.

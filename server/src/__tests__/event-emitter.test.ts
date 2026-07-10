@@ -16,6 +16,10 @@ import {
   TICKET_COMMENT_ADDED,
   TICKET_DEPENDENCY_ADDED,
   TICKET_DEPENDENCY_REMOVED,
+  CONVERSATION_CREATED,
+  CONVERSATION_MESSAGE_SENT,
+  CONVERSATION_READ_UPDATED,
+  CONVERSATION_DELETED,
   ticketEvents,
 } from '../services/event-emitter.js';
 import type { Response as ServerResponse } from 'express';
@@ -103,6 +107,13 @@ describe('TicketEventEmitter', () => {
       expect(TICKET_COMMENT_ADDED).toBe('ticket.comment_added');
       expect(TICKET_DEPENDENCY_ADDED).toBe('ticket.dep_added');
       expect(TICKET_DEPENDENCY_REMOVED).toBe('ticket.dep_removed');
+    });
+
+    it('exports all conversation event type constants', () => {
+      expect(CONVERSATION_CREATED).toBe('conversation.created');
+      expect(CONVERSATION_MESSAGE_SENT).toBe('conversation.message_sent');
+      expect(CONVERSATION_READ_UPDATED).toBe('conversation.read_updated');
+      expect(CONVERSATION_DELETED).toBe('conversation.deleted');
     });
   });
 
@@ -661,13 +672,17 @@ describe('ticketEvents singleton', () => {
         TICKET_COMMENT_ADDED,
         TICKET_DEPENDENCY_ADDED,
         TICKET_DEPENDENCY_REMOVED,
+        CONVERSATION_CREATED,
+        CONVERSATION_MESSAGE_SENT,
+        CONVERSATION_READ_UPDATED,
+        CONVERSATION_DELETED,
       ];
 
       events.forEach((event) => {
         ticketEvents.emit(event, { test: true });
       });
 
-      expect(res.write).toHaveBeenCalledTimes(7);
+      expect(res.write).toHaveBeenCalledTimes(11);
     });
   });
 });

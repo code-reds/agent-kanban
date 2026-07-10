@@ -203,7 +203,6 @@ export interface Message {
   sender_role_name: string;
   content: string;
   created_at: string;
-  fetched_until_id: number;
 }
 
 export interface Conversation {
@@ -226,7 +225,7 @@ export interface SendMessagePayload {
 
 export interface UnreadResponse {
   messages: Message[];
-  fetched_until_id: number;
+  last_read_message_id: number;
 }
 
 // Access Token types
@@ -575,9 +574,19 @@ export async function sendMessage(
 
 export async function fetchUnread(
   slug: string,
-  params?: { limit?: number; fetched_until?: number }
+  params?: { limit?: number }
 ): Promise<ApiResponse<UnreadResponse>> {
   return request<UnreadResponse>(`/projects/${slug}/messages/unread`, { params });
+}
+
+export async function markConversationAsRead(
+  slug: string,
+  conversationId: number
+): Promise<ApiResponse<{ marked_as_read: boolean }>> {
+  return request<{ marked_as_read: boolean }>(
+    `/projects/${slug}/conversations/${conversationId}/read`,
+    { method: 'PATCH' }
+  );
 }
 
 // Role endpoints

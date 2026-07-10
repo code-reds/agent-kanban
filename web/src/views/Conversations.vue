@@ -113,15 +113,35 @@
             </div>
 
             <div v-else class="messages-list">
+              <!-- Unread divider for Human User conversations -->
               <div
-                v-for="msg in store.activeConversation.messages"
+                v-if="isHumanConversation && store.unreadIndex >= 0"
+                class="unread-divider"
+              >
+                <span class="unread-divider-label">New</span>
+              </div>
+
+              <div
+                v-for="(msg, index) in store.activeConversation.messages"
                 :key="msg.id"
                 class="message-bubble"
-                :class="{ 'message-mine': isMine(msg.sender_role_id) }"
+                :class="{
+                  'message-mine': isMine(msg.sender_role_id),
+                  'message-unread': isHumanConversation && index >= (store.unreadIndex || -1)
+                }"
               >
                 <div class="message-sender">{{ msg.sender_role_name }}</div>
                 <div class="message-content" v-html="renderMarkdown(msg.content)"></div>
                 <div class="message-time">{{ formatTime(msg.created_at) }}</div>
+              </div>
+
+              <!-- Floating "New" badge -->
+              <div
+                v-if="store.unreadIndex >= 0"
+                class="unread-badge"
+                @click="handleMarkAsRead"
+              >
+                New ({{ store.unreadCount }})
               </div>
             </div>
           </div>
@@ -144,18 +164,48 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { useConversationStore } from '../stores/conversations';
 import { useProjectStore } from '../stores/projects';
 import { renderMarkdown } from '../utils/markdown';
+import { useSSE } from '../composables/useSSE';
+import type { Comment as ApiComment } from '../api';
 
 const route = useRoute();
 const projectStore = useProjectStore();
 const store = useConversationStore();
 const messagesContainer = ref<HTMLElement | null>(null);
+const newMessageTrigger = ref(0);
 
 const projectSlug = computed(() => route.params.slug as string);
+
+const sse = useSSE(projectSlug.value, {
+  handleTicketCreated: (_ticket: Record<string, unknown>) => {},
+  handleTicketUpdated: (_ticket: Record<string, unknown>) => {},
+  handleTicketMoved: (_ticketId: number, _toColumn: string) => {},
+  handleTicketDeleted: (_ticketId: number) => {},
+  handleCommentAdded: (_ticketId: number, _comment: ApiComment) => {},
+  handleDepAdded: (_ticketId: number, _dependsOnId: number, _relationType: string, _projectSlug: string) => {},
+  handleDepRemoved: (_ticketId: number, _dependsOnId: number, _relationType: string, _projectSlug: string) => {},
+  handleConversationCreated: (conversation) => store.handleConversationCreated(conversation),
+  handleConversationMessageSent: (conversationId, message) => {
+    store.handleConversationMessageSent(conversationId, message);
+    newMessageTrigger.value += 1;
+  },
+  handleConversationReadUpdated: (conversationId, lastReadMessageId) => store.handleConversationReadUpdated(conversationId, lastReadMessageId),
+  handleConversationDeleted: (conversationId) => {
+    store.handleConversationDeleted(conversationId);
+    newMessageTrigger.value += 1;
+  },
+});
+
+watch(newMessageTrigger, () => {
+  scrollToBottom();
+});
+
+const unreadIndex = computed(() => store.unreadIndex);
+const isHumanConversation = computed(() => store.isHumanConversation);
 
 const currentRoleId = computed(() => {
   return projectStore.currentProject?.roles[0]?.id;
@@ -169,6 +219,29 @@ const availableRoles = computed(() => {
   // Filter out the Human User (role_id 1) — they are the ones initiating
   return projectStore.currentProject.roles.filter((r) => r.id !== 1);
 });
+
+/** 2-second auto-mark-as-read timer for Human User conversations */
+let readTimer: ReturnType<typeof setTimeout> | null = null;
+
+function clearAutoReadTimer(): void {
+  if (readTimer) {
+    clearTimeout(readTimer);
+    readTimer = null;
+  }
+}
+
+function startAutoReadTimer(): void {
+  clearAutoReadTimer();
+  if (store.activeConversation && isHumanConversation.value) {
+    const convId = store.activeConversation.id;
+    const convActiveId = store.activeConversationId;
+    readTimer = setTimeout(async () => {
+      if (convActiveId === convId) {
+        await store.markAsRead(projectSlug.value, convId);
+      }
+    }, 2000);
+  }
+}
 
 function isMine(roleId: number): boolean {
   return roleId === currentRoleId.value;
@@ -185,6 +258,7 @@ async function refresh(): Promise<void> {
 
 async function selectConversation(convId: number): Promise<void> {
   await store.selectConversation(projectSlug.value, convId);
+  // markAsRead is now handled by the 2-second auto-read timer for Human User conversations
   await nextTick();
   scrollToBottom();
 }
@@ -208,6 +282,13 @@ function scrollToBottom(): void {
       messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight;
     }
   });
+}
+
+async function handleMarkAsRead(): Promise<void> {
+  if (store.activeConversation) {
+    await store.markAsRead(projectSlug.value, store.activeConversation.id);
+  }
+  scrollToBottom();
 }
 
 function closeNewConversationModal(): void {
@@ -239,10 +320,19 @@ async function handleCreateConversation(targetRoleId: number): Promise<void> {
   }
 }
 
+// Watch for conversation changes to start/clear auto-read timer
 watch(
-  () => store.activeConversation,
+  () => store.activeConversationId,
   () => {
-    nextTick(scrollToBottom);
+    startAutoReadTimer();
+  }
+);
+
+// Also watch isHumanConversation to restart timer if it changes
+watch(
+  () => isHumanConversation.value,
+  () => {
+    startAutoReadTimer();
   }
 );
 
@@ -250,7 +340,22 @@ onMounted(async () => {
   if (projectStore.currentProject) {
     await refresh();
   }
+  sse.connect();
 });
+
+onUnmounted(() => {
+  clearAutoReadTimer();
+  sse.disconnect();
+});
+
+// Reconnect SSE when project slug changes
+watch(
+  () => projectSlug.value,
+  (newSlug, _oldSlug) => {
+    sse.disconnect();
+    sse.connect(newSlug);
+  }
+);
 </script>
 
 <style scoped>
@@ -357,7 +462,7 @@ onMounted(async () => {
 }
 
 .conversation-item.active {
-  background-color: #eff6ff;
+  background-color: color-mix(in srgb, var(--color-primary) 12%, var(--color-surface));
   border-left: 3px solid var(--color-primary);
 }
 
@@ -458,8 +563,8 @@ onMounted(async () => {
 
 .message-mine {
   margin-left: auto;
-  background-color: #eff6ff;
-  border-color: #bfdbfe;
+  background-color: color-mix(in srgb, var(--color-primary) 12%, var(--color-surface));
+  border-color: color-mix(in srgb, var(--color-primary) 30%, var(--color-surface));
 }
 
 .message-sender {
@@ -653,6 +758,62 @@ onMounted(async () => {
   color: #ffffff;
 }
 
+/* Unread visualization */
+.unread-divider {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin: 16px 0;
+  position: relative;
+}
+
+.unread-divider::before,
+.unread-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background-color: var(--color-primary);
+  opacity: 0.4;
+}
+
+.unread-divider-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--color-text-secondary);
+  background-color: var(--color-surface);
+  padding: 2px 10px;
+  border-radius: 4px;
+  border: 1px solid var(--color-border);
+}
+
+.unread-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 14px;
+  background-color: var(--color-primary);
+  color: #ffffff;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  margin-top: 12px;
+  margin-left: 16px;
+  transition: background-color 0.15s;
+  user-select: none;
+}
+
+.unread-badge:hover {
+  background-color: var(--color-primary-hover);
+}
+
+.message-unread {
+  background-color: color-mix(in srgb, var(--color-warning) 12%, var(--color-surface));
+  border-color: color-mix(in srgb, var(--color-warning) 30%, var(--color-surface));
+}
+
 /* Modal */
 .modal-overlay {
   position: fixed;
@@ -740,8 +901,8 @@ onMounted(async () => {
 }
 
 .role-option:hover:not(.disabled) {
-  background-color: #eff6ff;
-  border-color: #bfdbfe;
+  background-color: color-mix(in srgb, var(--color-primary) 12%, var(--color-surface));
+  border-color: color-mix(in srgb, var(--color-primary) 30%, var(--color-surface));
 }
 
 .role-option.disabled {

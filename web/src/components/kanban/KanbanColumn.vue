@@ -184,12 +184,14 @@ function buildTicketList(): { type: 'ticket' | 'parent-group' | 'cross-col-paren
           @select="handleSelectTicket"
         />
       </template>
-      <div v-if="column.slug === 'done' && doneTotalCount > 8" class="kanban-column__load-more">
-        <button v-if="showAllDone" class="kanban-column__load-more-btn" @click="emit('collapseDone')">
+      <div v-if="column.slug === 'done' && showAllDone && doneTotalCount > 8" class="kanban-column__load-more">
+        <button class="kanban-column__load-more-btn" @click="emit('collapseDone')">
           Hide older tickets
         </button>
-        <button v-else class="kanban-column__load-more-btn" @click="emit('loadMoreDone')">
-          Show all tickets ({{ doneTotalCount - doneCountLoaded }} more)
+      </div>
+      <div v-else-if="column.slug === 'done' && doneTotalCount > 8 && !showAllDone" class="kanban-column__load-more">
+        <button class="kanban-column__load-more-btn" @click="emit('loadMoreDone')">
+          Show all tickets ({{ Math.max(0, doneTotalCount - doneCountLoaded) }} more)
         </button>
       </div>
       <div class="kanban-column__add-area">

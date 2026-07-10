@@ -82,7 +82,7 @@ describe('Conversations API Integration', () => {
       expect(res.status).toBe(200);
       expect(res.body).toHaveProperty('success', true);
       expect(res.body.data).toHaveProperty('messages');
-      expect(res.body.data).toHaveProperty('fetched_until_id');
+      expect(res.body.data).toHaveProperty('last_read_message_id');
     });
 
     it('should support limit parameter', async () => {

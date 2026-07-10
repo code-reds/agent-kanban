@@ -1,6 +1,6 @@
 import { ref, onUnmounted, getCurrentInstance } from 'vue';
 import type { Ref } from 'vue';
-import type { Comment as ApiComment } from '../api';
+import type { Comment as ApiComment, Conversation, Message } from '../api';
 
 /**
  * Event data shapes for SSE ticket events from the server.
@@ -50,6 +50,26 @@ export interface SseDepRemovedEvent {
   data: { ticket_id: number; depends_on_id: number; relation_type: string; project_slug: string };
 }
 
+export interface SseConversationCreatedEvent {
+  type: 'conversation.created';
+  data: { conversation: Conversation };
+}
+
+export interface SseConversationMessageSentEvent {
+  type: 'conversation.message_sent';
+  data: { conversation_id: number; message: Message };
+}
+
+export interface SseConversationReadUpdatedEvent {
+  type: 'conversation.read_updated';
+  data: { conversation_id: number; last_read_message_id: number };
+}
+
+export interface SseConversationDeletedEvent {
+  type: 'conversation.deleted';
+  data: { conversation_id: number };
+}
+
 export type SseEvent =
   | SseConnectedEvent
   | SseHeartbeatEvent
@@ -59,7 +79,11 @@ export type SseEvent =
   | SseTicketDeletedEvent
   | SseCommentAddedEvent
   | SseDepAddedEvent
-  | SseDepRemovedEvent;
+  | SseDepRemovedEvent
+  | SseConversationCreatedEvent
+  | SseConversationMessageSentEvent
+  | SseConversationReadUpdatedEvent
+  | SseConversationDeletedEvent;
 
 /**
  * Event handler types for the ticket store integration.
@@ -72,6 +96,10 @@ export interface SseEventHandlers {
   handleCommentAdded: (ticketId: number, comment: ApiComment) => void;
   handleDepAdded: (ticketId: number, dependsOnId: number, relationType: string, projectSlug: string) => void;
   handleDepRemoved: (ticketId: number, dependsOnId: number, relationType: string, projectSlug: string) => void;
+  handleConversationCreated: (conversation: Conversation) => void;
+  handleConversationMessageSent: (conversationId: number, message: Message) => void;
+  handleConversationReadUpdated: (conversationId: number, lastReadMessageId: number) => void;
+  handleConversationDeleted: (conversationId: number) => void;
 }
 
 /**
@@ -86,7 +114,7 @@ export function useSSE(
   handlers: SseEventHandlers
 ): {
   connected: Ref<boolean>;
-  connect: () => void;
+  connect: (newSlug?: string) => void;
   disconnect: () => void;
 } {
   const connected = ref(false);
@@ -152,6 +180,24 @@ export function useSSE(
           data.project_slug as string
         );
         break;
+      case 'conversation.created':
+        handlers.handleConversationCreated(data.conversation as Conversation);
+        break;
+      case 'conversation.message_sent':
+        handlers.handleConversationMessageSent(
+          data.conversation_id as number,
+          data.message as Message
+        );
+        break;
+      case 'conversation.read_updated':
+        handlers.handleConversationReadUpdated(
+          data.conversation_id as number,
+          data.last_read_message_id as number
+        );
+        break;
+      case 'conversation.deleted':
+        handlers.handleConversationDeleted(data.conversation_id as number);
+        break;
       case 'heartbeat':
         // Heartbeats are informational — no store action needed
         break;
@@ -195,6 +241,22 @@ export function useSSE(
       processEvent('ticket.dep_removed', e.data);
     });
 
+    source.addEventListener('conversation.created', (e: MessageEvent) => {
+      processEvent('conversation.created', e.data);
+    });
+
+    source.addEventListener('conversation.message_sent', (e: MessageEvent) => {
+      processEvent('conversation.message_sent', e.data);
+    });
+
+    source.addEventListener('conversation.read_updated', (e: MessageEvent) => {
+      processEvent('conversation.read_updated', e.data);
+    });
+
+    source.addEventListener('conversation.deleted', (e: MessageEvent) => {
+      processEvent('conversation.deleted', e.data);
+    });
+
     // Generic catch-all for events not registered above
     source.addEventListener('message', (e: MessageEvent) => {
       // SSE server sends events with event: type format.
@@ -222,13 +284,15 @@ export function useSSE(
 
   /**
    * Connect to the SSE endpoint.
+   * @param newSlug - Optional new project slug to connect to (overrides the slug passed to useSSE).
    */
-  function connect(): void {
+  function connect(newSlug?: string): void {
     if (eventSource) {
       return; // Already connected
     }
 
-    const url = `/api/v1/projects/${slug}/sse`;
+    const activeSlug = newSlug ?? slug;
+    const url = `/api/v1/projects/${activeSlug}/sse`;
     eventSource = new EventSource(url);
 
     attachListeners(eventSource);

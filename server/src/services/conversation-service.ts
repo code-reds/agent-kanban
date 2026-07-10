@@ -1,10 +1,76 @@
 import { getDb, getFallbackRoleId } from '../db/database.js';
+import { ticketEvents, CONVERSATION_CREATED, CONVERSATION_MESSAGE_SENT, CONVERSATION_READ_UPDATED, CONVERSATION_DELETED } from './event-emitter.js';
 
 /**
  * Shared conversation service that orchestrates message operations.
  * Used by both REST API and MCP tools.
  */
 export class ConversationService {
+  /**
+   * Get the project slug for a given project ID.
+   */
+  private static getProjectSlug(projectId: number): string | undefined {
+    const db = getDb();
+    const project = db.prepare<[number], { slug: string } | undefined>(
+      'SELECT slug FROM projects WHERE id = ?'
+    ).get(projectId);
+    return project?.slug;
+  }
+
+  /**
+   * Emit conversation.created event.
+   */
+  private static emitConversationCreated(conversation: {
+    id: number;
+    project_id: number;
+    from_role_id: number;
+    to_role_id: number;
+    from_role_name: string;
+    to_role_name: string;
+  }, projectId: number): void {
+    const slug = ConversationService.getProjectSlug(projectId);
+    ticketEvents.emit(CONVERSATION_CREATED, {
+      conversation_id: conversation.id,
+      project_slug: slug ?? '',
+      conversation,
+    });
+  }
+
+  /**
+   * Emit conversation.message_sent event.
+   */
+  private static emitMessageSent(conversationId: number, projectId: number, message: unknown): void {
+    const slug = ConversationService.getProjectSlug(projectId);
+    ticketEvents.emit(CONVERSATION_MESSAGE_SENT, {
+      conversation_id: conversationId,
+      project_slug: slug ?? '',
+      message,
+    });
+  }
+
+  /**
+   * Emit conversation.read_updated event.
+   */
+  private static emitReadUpdated(conversationId: number, projectId: number, lastReadMessageId: number): void {
+    const slug = ConversationService.getProjectSlug(projectId);
+    ticketEvents.emit(CONVERSATION_READ_UPDATED, {
+      conversation_id: conversationId,
+      project_slug: slug ?? '',
+      last_read_message_id: lastReadMessageId,
+    });
+  }
+
+  /**
+   * Emit conversation.deleted event.
+   */
+  private static emitConversationDeleted(conversationId: number, projectId: number): void {
+    const slug = ConversationService.getProjectSlug(projectId);
+    ticketEvents.emit(CONVERSATION_DELETED, {
+      conversation_id: conversationId,
+      project_slug: slug ?? '',
+    });
+  }
+
   /**
    * List all conversations for a project with role names.
    */
@@ -65,7 +131,6 @@ export class ConversationService {
       sender_role_id: number;
       content: string;
       created_at: string;
-      fetched_until_id: number;
       sender_role_name: string;
     }[];
 
@@ -97,6 +162,7 @@ export class ConversationService {
       ).get(projectId, toRoleId, humanRoleId) as { id: number } | undefined;
     }
 
+    let isNewConversation = false;
     if (!conversation) {
       // Create new conversation (Human -> Target)
       const result = db.prepare<[number, number, number]>(
@@ -108,6 +174,7 @@ export class ConversationService {
       }
 
       conversation = result;
+      isNewConversation = true;
     }
 
     // Return full conversation record with role names
@@ -128,6 +195,11 @@ export class ConversationService {
 
     if (!fullConversation) {
       return { conversation: undefined, error: 'Failed to retrieve created conversation', errorCode: 'INTERNAL_ERROR' };
+    }
+
+    // Emit conversation.created event only for newly created conversations
+    if (isNewConversation) {
+      ConversationService.emitConversationCreated(fullConversation, projectId);
     }
 
     return { conversation: fullConversation };
@@ -171,6 +243,7 @@ export class ConversationService {
       ).get(projectId, toRole.id, fromRole.id) as { id: number } | undefined;
     }
 
+    let isNewConversation = false;
     if (!conversation) {
       // Create new conversation
       const result = db.prepare<[number, number, number]>(
@@ -182,15 +255,60 @@ export class ConversationService {
       }
 
       conversation = result;
+      isNewConversation = true;
+    }
+
+    // Fetch full conversation record with role names for the event
+    const fullConversation = db.prepare(`
+      SELECT c.*, r_from.name AS from_role_name, r_to.name AS to_role_name
+      FROM conversations c
+      JOIN roles r_from ON c.from_role_id = r_from.id
+      JOIN roles r_to ON c.to_role_id = r_to.id
+      WHERE c.id = ?
+    `).get(conversation.id) as {
+      id: number;
+      project_id: number;
+      from_role_id: number;
+      to_role_id: number;
+      from_role_name: string;
+      to_role_name: string;
+    } | undefined;
+
+    // Emit conversation.created event only for newly created conversations
+    if (isNewConversation && fullConversation) {
+      ConversationService.emitConversationCreated(fullConversation, projectId);
     }
 
     return { conversation: { id: conversation.id } };
   }
 
   /**
-   * Send a message to a conversation.
+   * Mark all messages in a conversation as read by updating the conversation's
+   * last_read_message_id cursor to the highest message ID.
    */
-  static sendMessage(
+  static markConversationAsRead(conversationId: number, projectId: number): void {
+    const db = getDb();
+
+    // Get the highest message ID in this conversation
+    const highestMsg = db.prepare(
+      'SELECT MAX(id) as max_id FROM messages WHERE conversation_id = ?'
+    ).get(conversationId) as { max_id: number | null } | undefined;
+
+    if (highestMsg?.max_id !== null && highestMsg?.max_id !== undefined) {
+      db.prepare(
+        'UPDATE conversations SET last_read_message_id = ? WHERE id = ? AND project_id = ?'
+      ).run(highestMsg.max_id, conversationId, projectId);
+    }
+
+    // Emit conversation.read_updated event
+    const lastReadMessageId = highestMsg?.max_id ?? 0;
+    ConversationService.emitReadUpdated(conversationId, projectId, lastReadMessageId);
+  }
+
+  /**
+    * Send a message to a conversation.
+    */
+   static sendMessage(
     projectId: number,
     conversationId: number,
     content: string,
@@ -231,47 +349,47 @@ export class ConversationService {
       sender_role_id: number;
       content: string;
       created_at: string;
-      fetched_until_id: number;
       sender_role_name: string;
     };
+
+    // Emit conversation.message_sent event
+    ConversationService.emitMessageSent(conversationId, projectId, message);
 
     return { message };
   }
 
   /**
-   * Fetch unread messages and auto-update fetched_until_id.
-   */
-  static fetchUnread(
+    * Fetch unread messages and auto-update last_read_message_id.
+    */
+   static fetchUnread(
     projectId: number,
     params: {
       limit?: number;
-      fetchedUntilId?: number;
     }
   ) {
     const limit = params.limit ?? 1;
-    const fetchedUntilId = params.fetchedUntilId ?? 0;
     const db = getDb();
 
-    // Get all conversations for this project
+    // Get all conversations for this project with their read cursors
     const conversations = db.prepare(
-      'SELECT id FROM conversations WHERE project_id = ?'
-    ).all(projectId) as { id: number }[];
+      'SELECT id, last_read_message_id FROM conversations WHERE project_id = ?'
+    ).all(projectId) as { id: number; last_read_message_id: number }[];
 
     if (conversations.length === 0) {
-      return { messages: [] as any[], fetched_until_id: fetchedUntilId };
+      return { messages: [] as any[], last_read_message_id: 0 };
     }
 
-    // Fetch unread messages (id > fetched_until_id)
+    // Fetch unread messages (id > last_read_message_id for that conversation)
     let query = `
       SELECT m.*, r.name AS sender_role_name, c.from_role_id, c.to_role_id
       FROM messages m
       JOIN roles r ON m.sender_role_id = r.id
       JOIN conversations c ON m.conversation_id = c.id
-      WHERE c.project_id = ? AND m.id > ?
+      WHERE c.project_id = ? AND m.id > c.last_read_message_id
       ORDER BY m.created_at
     `;
 
-    const allParams: unknown[] = [projectId, fetchedUntilId];
+    const allParams: unknown[] = [projectId];
 
     if (limit > 0) {
       query += ' LIMIT ?';
@@ -284,26 +402,74 @@ export class ConversationService {
       sender_role_id: number;
       content: string;
       created_at: string;
-      fetched_until_id: number;
       sender_role_name: string;
       from_role_id: number;
       to_role_id: number;
     }[];
 
-    // Auto-update fetched_until_id to highest returned message ID
+    // Track highest message ID per conversation to update cursors
     if (messages.length > 0) {
-      const highestId = Math.max(...messages.map((m) => m.id));
-      // Update each conversation's fetched_until_id
-      for (const conversation of conversations) {
+      const highestPerConversation = new Map<number, number>();
+      for (const msg of messages) {
+        const current = highestPerConversation.get(msg.conversation_id) ?? 0;
+        if (msg.id > current) {
+          highestPerConversation.set(msg.conversation_id, msg.id);
+        }
+      }
+
+      // Update last_read_message_id for each affected conversation
+      for (const [convId, highestId] of highestPerConversation) {
         db.prepare(
-          'UPDATE messages SET fetched_until_id = MAX(fetched_until_id, ?) WHERE conversation_id = ?'
-        ).run(highestId, conversation.id);
+          'UPDATE conversations SET last_read_message_id = ? WHERE id = ?'
+        ).run(highestId, convId);
       }
     }
 
+    // Return the highest message ID across all returned messages as a global cursor.
+    // Since last_read_message_id is a per-conversation cursor and we're marking all
+    // conversations as read in this call, using the global maximum ensures every
+    // conversation's cursor is >= all message IDs it contains. This is a safe
+    // over-mark (no messages will be missed) and avoids the need for per-conversation
+    // cursor tracking.
+    const lastReadMessageId = messages.length > 0
+      ? Math.max(...messages.map((m) => m.id))
+      : 0;
+
     return {
       messages,
-      fetched_until_id: messages.length > 0 ? Math.max(...messages.map((m) => m.id)) : fetchedUntilId,
+      last_read_message_id: lastReadMessageId,
     };
+  }
+
+  /**
+   * Delete a conversation and all its messages.
+   * Emits a conversation.deleted event after successful deletion.
+   */
+  static delete(projectId: number, conversationId: number): { success: boolean; error?: string; errorCode?: string; statusCode?: number } {
+    const db = getDb();
+
+    // Verify conversation exists and belongs to project
+    const conversation = db.prepare(
+      'SELECT id FROM conversations WHERE id = ? AND project_id = ?'
+    ).get(conversationId, projectId);
+
+    if (!conversation) {
+      return { success: false, error: `Conversation '${conversationId}' not found`, errorCode: 'NOT_FOUND', statusCode: 404 };
+    }
+
+    // Delete all messages in the conversation first
+    db.prepare(
+      'DELETE FROM messages WHERE conversation_id = ?'
+    ).run(conversationId);
+
+    // Delete the conversation
+    db.prepare(
+      'DELETE FROM conversations WHERE id = ? AND project_id = ?'
+    ).run(conversationId, projectId);
+
+    // Emit conversation.deleted event
+    ConversationService.emitConversationDeleted(conversationId, projectId);
+
+    return { success: true };
   }
 }

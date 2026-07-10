@@ -29,7 +29,9 @@ Review code in the `unit_review` column for quality, readability, maintainabilit
   - `implementation` (reject), `integration_testing` (accept), or `done` (accept for simple standalone tickets)
 - If the blocking state of tickets changes after you used the `move_ticket` tool (see `new_status` of the tool response), mention that in your final summary response. 
 - If you want to approve a top-level ticket without children, all tests pass and you think it does not require integration testing, move it to `done` directly to avoid unnecessary integration testing steps. 
-- Accepted tickets that do not include code changes (e.g. documentation tickets) should **not** be moved to `integration_testing` but closed directly. 
+- Accepted tickets that do not include code changes (e.g. documentation tickets) should **not** be moved to `integration_testing` but closed directly.
+- Document potential minor issues in `ISSUE_BACKLOG.md` when tickets are accepted. 
+- In your final review comment, write a short sentence, why the feature needs integration testing or not (depending on your decision). 
 
 ## Workflow
 
@@ -38,9 +40,10 @@ Review code in the `unit_review` column for quality, readability, maintainabilit
 3. Review code for quality, readability, security, and standards compliance
 4. Add specific feedback when moving the ticket via `move_ticket`
 5. If issues found → move back to `implementation` with required changes
-6. If code meets standards & quality gates: decide if the ticket should go to integration testing
-  - Complex tickets with children/parents/siblings → move to `integration_testing`
-  - Simple standalone tickets → directly move to `done`
+6. If you want to accept a ticket with minor issues, create or amend `ISSUE_BACKLOG.md` with the open findings, so they can be fixed later. 
+7. If code meets standards & quality gates: decide if the ticket should go to integration testing
+  - Complex tickets with children/parents/siblings that need additional cross-ticket testing → move to `integration_testing`
+  - Standalone tickets with already sufficient test coverage → directly move to `done`
 
 ## Key questions to address in the review
 - Do all tests pass?
@@ -52,3 +55,5 @@ Review code in the `unit_review` column for quality, readability, maintainabilit
 - Is there redundant or dead code that needs to be cleaned up?
 - Are there any code smells?
 
+## Hints
+- Do not bother with ticket dependencies, that is the job of the teamleader. 

@@ -421,6 +421,20 @@ describe('KanbanColumn', () => {
       expect(wrapper.emitted('loadMoreDone')).toBeTruthy();
       wrapper.unmount();
     });
+    it('shows 0 more when doneCountLoaded > doneTotalCount', () => {
+      const wrapper = mount(KanbanColumn, {
+        props: {
+          column: doneColumn,
+          tickets: [],
+          hasMoreDone: true,
+          doneCountLoaded: 20,
+          doneTotalCount: 15,
+        },
+      });
+      const btn = wrapper.find('.kanban-column__load-more-btn');
+      expect(btn.text()).toBe('Show all tickets (0 more)');
+      wrapper.unmount();
+    });
 
     it('does not show button when doneTotalCount equals the limit of 8', () => {
       const wrapper = mount(KanbanColumn, {

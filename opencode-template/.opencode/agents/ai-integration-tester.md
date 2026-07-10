@@ -61,3 +61,6 @@ Decision flow:
       - ❌ No: Are there other tickets in `implementation`, `unit_review` or `integration_testing` that could be responsible?
         - ✅ Yes: Flag the responsible ticket(s) in your report with details about the likely failure. 
         - ❌ No: Note the unrelated failure in your report and recommend opening a new ticket to address. 
+
+## Hints
+- Do not bother with ticket dependencies, that is the job of the teamleader. 

@@ -625,6 +625,22 @@ export function getAllDescendantTicketIds(ticketId: number): number[] {
 }
 
 /**
+ * Get the most critical open ticket IDs for a project, ordered by criticality.
+ * Uses the `most_critical_tickets` SQL view which ranks tickets by:
+ * - max_blocked_column (descending): tickets closer to "done" with blockers are more critical
+ * - inherited_priority (ascending): lower priority number = higher importance
+ * - blocked_ticket_count (descending): more blockers = more critical
+ * Returns at most 3 ticket IDs.
+ */
+export function getMostCriticalTickets(projectId: number): number[] {
+  const db = getDb();
+  const rows = db.prepare<[number], { id: number }>(
+    'SELECT id FROM most_critical_tickets WHERE project_id = ? LIMIT 3'
+  ).all(projectId);
+  return rows.map((r) => r.id);
+}
+
+/**
  * Get blocked ticket IDs for a project using the ticket_blockers view.
  * Returns all distinct ticket_ids that are blocked (have unresolved dependencies
  * or entire-ticket-group violations).

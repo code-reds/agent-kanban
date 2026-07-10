@@ -2,6 +2,8 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { McpSession } from '../session.js';
 import { z } from 'zod';
 import { TicketService } from '../../services/ticket-service.js';
+import { NotificationService } from '../../services/notification-service.js';
+import { amendMCPResponseWithNotifications } from '../utils/notifications.js';
 import { getColumnById as getColumnByIdQuery } from '../../db/queries/kanban.js';
 import { COLUMNS } from '../../types/columns.js';
 import { TicketListMode } from '../../types/ticket.js';
@@ -38,8 +40,15 @@ function transformTicketResponse(ticket: Record<string, unknown>, projectSlug: s
   return result;
 }
 
+/** Helper: wrap a response JSON string with notification check */
+function withNotifications(baseResponse: string, unreadCount: number): string {
+  if (unreadCount === 0) return baseResponse;
+  return amendMCPResponseWithNotifications(baseResponse, unreadCount);
+}
+
 export function registerTicketTools(server: McpServer, session: McpSession) {
   const projectSlug = session.projectSlug;
+  const projectId = session.projectId;
   const roleId = session.roleId;
   const pc = session.permissionChecker;
 
@@ -84,44 +93,46 @@ export function registerTicketTools(server: McpServer, session: McpSession) {
     async (params) => {
       const project = TicketService.resolveProject(projectSlug);
       if (!project) {
+        const baseResponse = JSON.stringify({ success: false, error: `Project '${projectSlug}' not found`, code: 'NOT_FOUND' });
+        const notifications = NotificationService.checkForNotifications(roleId, projectId);
         return {
-          content: [{ type: 'text', text: JSON.stringify({ success: false, error: `Project '${projectSlug}' not found`, code: 'NOT_FOUND' }) }],
+          content: [{ type: 'text', text: withNotifications(baseResponse, notifications.unreadCount) }],
         };
       }
 
-      const projectId = project.id;
+      const projectIdResolved = project.id;
       const mode: TicketListMode = params.mode ?? 'todo-list';
 
-     // Handle todo-list mode with role-specific logic
-        if (mode === 'todo-list') {
-          const roleColumnId = TicketService.getRoleDefaultColumn(roleId, projectId);
-          let columnSlugs: string[];
+      // Handle todo-list mode with role-specific logic
+      if (mode === 'todo-list') {
+        const roleColumnId = TicketService.getRoleDefaultColumn(roleId, projectIdResolved);
+        let columnSlugs: string[];
 
-          if (roleColumnId === null) {
-            // Unrestricted role (e.g., Human User, teamleader) — see all non-done/non-feedback columns
-            columnSlugs = [COLUMNS.TODO, COLUMNS.IMPLEMENTATION, COLUMNS.UNIT_REVIEW, COLUMNS.INTEGRATION_TESTING, COLUMNS.FINAL_REVIEW];
-          } else {
-            // Resolve column ID to slug
-            const col = getColumnByIdQuery(roleColumnId);
-            columnSlugs = col ? [col.slug] : [];
-          }
+        if (roleColumnId === null) {
+          // Unrestricted role (e.g., Human User, teamleader) — see all non-done/non-feedback columns
+          columnSlugs = [COLUMNS.TODO, COLUMNS.IMPLEMENTATION, COLUMNS.UNIT_REVIEW, COLUMNS.INTEGRATION_TESTING, COLUMNS.FINAL_REVIEW];
+        } else {
+          // Resolve column ID to slug
+          const col = getColumnByIdQuery(roleColumnId);
+          columnSlugs = col ? [col.slug] : [];
+        }
 
-          // When include_closed=true, also include the done column where closed tickets live
-          if (params.include_closed && !columnSlugs.includes(COLUMNS.DONE)) {
-            columnSlugs.push(COLUMNS.DONE);
-         }
+        // When include_closed=true, also include the done column where closed tickets live
+        if (params.include_closed && !columnSlugs.includes(COLUMNS.DONE)) {
+          columnSlugs.push(COLUMNS.DONE);
+        }
 
         // Collect all candidate ticket IDs from relevant columns
         const candidateIds = new Set<number>();
         for (const colSlug of columnSlugs) {
           const ids = params.include_closed
-            ? TicketService.getAllColumnTicketIds(projectId, colSlug)
-            : TicketService.getNonClosedColumnTicketIds(projectId, colSlug);
+            ? TicketService.getAllColumnTicketIds(projectIdResolved, colSlug)
+            : TicketService.getNonClosedColumnTicketIds(projectIdResolved, colSlug);
           for (const id of ids) candidateIds.add(id);
         }
 
         // Filter out blocked tickets
-        const blockedIds = new Set(TicketService.getBlockedTicketIds(projectId));
+        const blockedIds = new Set(TicketService.getBlockedTicketIds(projectIdResolved));
         const openTickets = Array.from(candidateIds).filter((id) => !blockedIds.has(id));
 
         // Apply parent_id filter if specified
@@ -129,7 +140,7 @@ export function registerTicketTools(server: McpServer, session: McpSession) {
         if (params.parent_id) {
           const parentId = params.parent_id;
           const parentCheck = TicketService.findTicketForProject(projectSlug, parentId);
-          if (parentCheck.ticket && parentCheck.ticket.project_id === projectId) {
+          if (parentCheck.ticket && parentCheck.ticket.project_id === projectIdResolved) {
             const ticketParentIds = new Map<number, number>();
             for (const id of openTickets) {
               const check = TicketService.findTicketForProject(projectSlug, id);
@@ -139,14 +150,16 @@ export function registerTicketTools(server: McpServer, session: McpSession) {
             }
             filteredIds = openTickets.filter((id) => id === parentId || (ticketParentIds.get(id) === parentId));
           } else {
+            const baseResponse = JSON.stringify({ success: true, data: { tickets: [], total: 0, mode } });
+            const notifications = NotificationService.checkForNotifications(roleId, projectIdResolved);
             return {
-              content: [{ type: 'text', text: JSON.stringify({ success: true, data: { tickets: [], total: 0, mode } }) }],
+              content: [{ type: 'text', text: withNotifications(baseResponse, notifications.unreadCount) }],
             };
           }
         }
 
         // Apply priority and labels filters, then paginate
-        const result = TicketService.listByMode(projectId, mode, {
+        const result = TicketService.listByMode(projectIdResolved, mode, {
           priority: params.priority,
           labels: params.labels,
           ticket_ids: filteredIds,
@@ -161,13 +174,16 @@ export function registerTicketTools(server: McpServer, session: McpSession) {
           enriched.blocking_ticket_ids = TicketService.getUnresolvedDependencyIds(t.id as number);
           return enriched;
         });
+        const mostCriticalNextTickets = TicketService.getMostCriticalTickets(projectIdResolved);
+        const baseResponse = JSON.stringify({ success: true, data: { tickets: transformedTickets, total: result.total, mode, most_critical_next_tickets: mostCriticalNextTickets } });
+        const notifications = NotificationService.checkForNotifications(roleId, projectIdResolved);
         return {
-          content: [{ type: 'text', text: JSON.stringify({ success: true, data: { tickets: transformedTickets, total: result.total, mode } }) }],
+          content: [{ type: 'text', text: withNotifications(baseResponse, notifications.unreadCount) }],
         };
       }
 
       if (mode === 'not-blocked') {
-        const result = TicketService.listByMode(projectId, mode, {
+        const result = TicketService.listByMode(projectIdResolved, mode, {
           column: params.column,
           priority: params.priority,
           labels: params.labels,
@@ -182,13 +198,16 @@ export function registerTicketTools(server: McpServer, session: McpSession) {
           enriched.blocking_ticket_ids = [];
           return enriched;
         });
+        const mostCriticalNextTickets = TicketService.getMostCriticalTickets(projectIdResolved);
+        const baseResponse = JSON.stringify({ success: true, data: { tickets: transformedTickets, total: result.total, mode, most_critical_next_tickets: mostCriticalNextTickets } });
+        const notifications = NotificationService.checkForNotifications(roleId, projectIdResolved);
         return {
-          content: [{ type: 'text', text: JSON.stringify({ success: true, data: { tickets: transformedTickets, total: result.total, mode } }) }],
+          content: [{ type: 'text', text: withNotifications(baseResponse, notifications.unreadCount) }],
         };
       }
 
       if (mode === 'top-level-tickets') {
-        const result = TicketService.listByMode(projectId, mode, {
+        const result = TicketService.listByMode(projectIdResolved, mode, {
           column: params.column,
           priority: params.priority,
           labels: params.labels,
@@ -197,15 +216,17 @@ export function registerTicketTools(server: McpServer, session: McpSession) {
           include_closed: params.include_closed ?? false,
         });
 
-        const blockedIds = new Set(TicketService.getBlockedTicketIds(projectId));
+        const blockedIds = new Set(TicketService.getBlockedTicketIds(projectIdResolved));
         const transformedTickets = result.tickets.map((t) => {
           const enriched = transformTicketResponse(t as unknown as Record<string, unknown>, projectSlug, { suppressDescription: true });
           enriched.is_blocked = blockedIds.has(t.id as number);
           enriched.blocking_ticket_ids = TicketService.getUnresolvedDependencyIds(t.id as number);
           return enriched;
         });
+        const baseResponse = JSON.stringify({ success: true, data: { tickets: transformedTickets, total: result.total, mode } });
+        const notifications = NotificationService.checkForNotifications(roleId, projectIdResolved);
         return {
-          content: [{ type: 'text', text: JSON.stringify({ success: true, data: { tickets: transformedTickets, total: result.total, mode } }) }],
+          content: [{ type: 'text', text: withNotifications(baseResponse, notifications.unreadCount) }],
         };
       }
 
@@ -223,20 +244,24 @@ export function registerTicketTools(server: McpServer, session: McpSession) {
       });
 
       if (result.error) {
+        const baseResponse = JSON.stringify({ success: false, error: result.error, code: result.errorCode });
+        const notifications = NotificationService.checkForNotifications(roleId, projectIdResolved);
         return {
-          content: [{ type: 'text', text: JSON.stringify({ success: false, error: result.error, code: result.errorCode }) }],
+          content: [{ type: 'text', text: withNotifications(baseResponse, notifications.unreadCount) }],
         };
       }
 
-      const blockedIds = new Set(TicketService.getBlockedTicketIds(projectId));
+      const blockedIds = new Set(TicketService.getBlockedTicketIds(projectIdResolved));
       const transformedTickets = result.tickets.map((t) => {
         const enriched = transformTicketResponse(t as unknown as Record<string, unknown>, projectSlug, { suppressDescription: true });
         enriched.is_blocked = blockedIds.has(t.id as number);
         enriched.blocking_ticket_ids = TicketService.getUnresolvedDependencyIds(t.id as number);
         return enriched;
       });
+      const baseResponse = JSON.stringify({ success: true, data: { tickets: transformedTickets, total: result.total, mode: 'all' } });
+      const notifications = NotificationService.checkForNotifications(roleId, projectIdResolved);
       return {
-        content: [{ type: 'text', text: JSON.stringify({ success: true, data: { tickets: transformedTickets, total: result.total, mode: 'all' } }) }],
+        content: [{ type: 'text', text: withNotifications(baseResponse, notifications.unreadCount) }],
       };
     }
   );
@@ -254,23 +279,28 @@ export function registerTicketTools(server: McpServer, session: McpSession) {
     async (params) => {
       const project = TicketService.resolveProject(projectSlug);
       if (!project) {
+        const baseResponse = JSON.stringify({ success: false, error: `Project '${projectSlug}' not found`, code: 'NOT_FOUND' });
+        const notifications = NotificationService.checkForNotifications(roleId, projectId);
         return {
-          content: [{ type: 'text', text: JSON.stringify({ success: false, error: `Project '${projectSlug}' not found`, code: 'NOT_FOUND' }) }],
+          content: [{ type: 'text', text: withNotifications(baseResponse, notifications.unreadCount) }],
         };
       }
 
       const ticketResult = TicketService.findTicketForProject(projectSlug, params.id);
       if (!ticketResult.ticket) {
+        const baseResponse = JSON.stringify({ success: false, error: `Ticket '${params.id}' not found`, code: 'NOT_FOUND' });
+        const notifications = NotificationService.checkForNotifications(roleId, projectId);
         return {
-          content: [{ type: 'text', text: JSON.stringify({ success: false, error: `Ticket '${params.id}' not found`, code: 'NOT_FOUND' }) }],
+          content: [{ type: 'text', text: withNotifications(baseResponse, notifications.unreadCount) }],
         };
       }
 
       const isBlocked = TicketService.isTicketBlocked(params.id);
       const blockingTicketIds = TicketService.getUnresolvedDependencyIds(params.id);
-
+      const baseResponse = JSON.stringify({ success: true, data: { ...transformTicketResponse(ticketResult.ticket as unknown as Record<string, unknown>, projectSlug), is_blocked: isBlocked, blocking_ticket_ids: blockingTicketIds } });
+      const notifications = NotificationService.checkForNotifications(roleId, projectId);
       return {
-        content: [{ type: 'text', text: JSON.stringify({ success: true, data: { ...transformTicketResponse(ticketResult.ticket as unknown as Record<string, unknown>, projectSlug), is_blocked: isBlocked, blocking_ticket_ids: blockingTicketIds } }) }],
+        content: [{ type: 'text', text: withNotifications(baseResponse, notifications.unreadCount) }],
       };
     }
   );
@@ -293,15 +323,19 @@ export function registerTicketTools(server: McpServer, session: McpSession) {
     },
     async (params) => {
       if (!pc.validateColumn(params.column)) {
+        const baseResponse = JSON.stringify({ success: false, error: `Column '${params.column}' not found`, code: 'NOT_FOUND' });
+        const notifications = NotificationService.checkForNotifications(roleId, projectId);
         return {
-          content: [{ type: 'text', text: JSON.stringify({ success: false, error: `Column '${params.column}' not found`, code: 'NOT_FOUND' }) }],
+          content: [{ type: 'text', text: withNotifications(baseResponse, notifications.unreadCount) }],
         };
       }
 
       const permCheck = pc.checkPermission('create_ticket', params.column);
       if (!permCheck.allowed) {
+        const baseResponse = JSON.stringify({ success: false, error: permCheck.reason, code: 'PERMISSION_DENIED' });
+        const notifications = NotificationService.checkForNotifications(roleId, projectId);
         return {
-          content: [{ type: 'text', text: JSON.stringify({ success: false, error: permCheck.reason, code: 'PERMISSION_DENIED' }) }],
+          content: [{ type: 'text', text: withNotifications(baseResponse, notifications.unreadCount) }],
         };
       }
 
@@ -317,13 +351,17 @@ export function registerTicketTools(server: McpServer, session: McpSession) {
       });
 
       if (result.error) {
+        const baseResponse = JSON.stringify({ success: false, error: result.error, code: result.errorCode });
+        const notifications = NotificationService.checkForNotifications(roleId, projectId);
         return {
-          content: [{ type: 'text', text: JSON.stringify({ success: false, error: result.error, code: result.errorCode }) }],
+          content: [{ type: 'text', text: withNotifications(baseResponse, notifications.unreadCount) }],
         };
       }
 
+      const baseResponse = JSON.stringify({ success: true, data: transformTicketResponse(result.ticket as unknown as Record<string, unknown>, projectSlug) });
+      const notifications = NotificationService.checkForNotifications(roleId, projectId);
       return {
-        content: [{ type: 'text', text: JSON.stringify({ success: true, data: transformTicketResponse(result.ticket as unknown as Record<string, unknown>, projectSlug) }) }],
+        content: [{ type: 'text', text: withNotifications(baseResponse, notifications.unreadCount) }],
       };
     }
   );
@@ -348,23 +386,29 @@ export function registerTicketTools(server: McpServer, session: McpSession) {
       const ticketResult = TicketService.findTicketForProject(projectSlug, params.id);
 
       if (!ticketResult.ticket) {
+        const baseResponse = JSON.stringify({ success: false, error: `Ticket '${params.id}' not found`, code: 'NOT_FOUND' });
+        const notifications = NotificationService.checkForNotifications(roleId, projectId);
         return {
-          content: [{ type: 'text', text: JSON.stringify({ success: false, error: `Ticket '${params.id}' not found`, code: 'NOT_FOUND' }) }],
+          content: [{ type: 'text', text: withNotifications(baseResponse, notifications.unreadCount) }],
         };
       }
 
       const ticket = ticketResult.ticket;
       const columnSlug = pc.getColumnSlug(ticket.column_id);
       if (!columnSlug) {
+        const baseResponse = JSON.stringify({ success: false, error: 'Ticket has invalid column', code: 'INTERNAL_ERROR' });
+        const notifications = NotificationService.checkForNotifications(roleId, projectId);
         return {
-          content: [{ type: 'text', text: JSON.stringify({ success: false, error: 'Ticket has invalid column', code: 'INTERNAL_ERROR' }) }],
+          content: [{ type: 'text', text: withNotifications(baseResponse, notifications.unreadCount) }],
         };
       }
 
       const permCheck = pc.checkPermission('update_ticket', columnSlug);
       if (!permCheck.allowed) {
+        const baseResponse = JSON.stringify({ success: false, error: permCheck.reason, code: 'PERMISSION_DENIED' });
+        const notifications = NotificationService.checkForNotifications(roleId, projectId);
         return {
-          content: [{ type: 'text', text: JSON.stringify({ success: false, error: permCheck.reason, code: 'PERMISSION_DENIED' }) }],
+          content: [{ type: 'text', text: withNotifications(baseResponse, notifications.unreadCount) }],
         };
       }
 
@@ -379,13 +423,17 @@ export function registerTicketTools(server: McpServer, session: McpSession) {
       });
 
       if (result.error) {
+        const baseResponse = JSON.stringify({ success: false, error: result.error, code: result.errorCode });
+        const notifications = NotificationService.checkForNotifications(roleId, projectId);
         return {
-          content: [{ type: 'text', text: JSON.stringify({ success: false, error: result.error, code: result.errorCode }) }],
+          content: [{ type: 'text', text: withNotifications(baseResponse, notifications.unreadCount) }],
         };
       }
 
+      const baseResponse = JSON.stringify({ success: true, data: transformTicketResponse(result.ticket as unknown as Record<string, unknown>, projectSlug) });
+      const notifications = NotificationService.checkForNotifications(roleId, projectId);
       return {
-        content: [{ type: 'text', text: JSON.stringify({ success: true, data: transformTicketResponse(result.ticket as unknown as Record<string, unknown>, projectSlug) }) }],
+        content: [{ type: 'text', text: withNotifications(baseResponse, notifications.unreadCount) }],
       };
     }
   );
@@ -406,8 +454,10 @@ export function registerTicketTools(server: McpServer, session: McpSession) {
       const ticketResult = TicketService.findTicketForProject(projectSlug, params.id);
 
       if (!ticketResult.ticket) {
+        const baseResponse = JSON.stringify({ success: false, error: `Ticket '${params.id}' not found`, code: 'NOT_FOUND' });
+        const notifications = NotificationService.checkForNotifications(roleId, projectId);
         return {
-          content: [{ type: 'text', text: JSON.stringify({ success: false, error: `Ticket '${params.id}' not found`, code: 'NOT_FOUND' }) }],
+          content: [{ type: 'text', text: withNotifications(baseResponse, notifications.unreadCount) }],
         };
       }
 
@@ -415,27 +465,35 @@ export function registerTicketTools(server: McpServer, session: McpSession) {
       const fromColData = { slug: pc.getColumnSlug(ticket.column_id) || '' };
 
       if (!fromColData.slug) {
+        const baseResponse = JSON.stringify({ success: false, error: 'Ticket has invalid column', code: 'INTERNAL_ERROR' });
+        const notifications = NotificationService.checkForNotifications(roleId, projectId);
         return {
-          content: [{ type: 'text', text: JSON.stringify({ success: false, error: 'Ticket has invalid column', code: 'INTERNAL_ERROR' }) }],
+          content: [{ type: 'text', text: withNotifications(baseResponse, notifications.unreadCount) }],
         };
       }
 
       if (!pc.validateColumn(params.to_column)) {
+        const baseResponse = JSON.stringify({ success: false, error: `Column '${params.to_column}' not found`, code: 'NOT_FOUND' });
+        const notifications = NotificationService.checkForNotifications(roleId, projectId);
         return {
-          content: [{ type: 'text', text: JSON.stringify({ success: false, error: `Column '${params.to_column}' not found`, code: 'NOT_FOUND' }) }],
+          content: [{ type: 'text', text: withNotifications(baseResponse, notifications.unreadCount) }],
         };
       }
 
       const transitionCheck = pc.canTransition(fromColData.slug, params.to_column);
       if (!transitionCheck.allowed) {
+        const baseResponse = JSON.stringify({ success: false, error: transitionCheck.reason, code: 'PERMISSION_DENIED' });
+        const notifications = NotificationService.checkForNotifications(roleId, projectId);
         return {
-          content: [{ type: 'text', text: JSON.stringify({ success: false, error: transitionCheck.reason, code: 'PERMISSION_DENIED' }) }],
+          content: [{ type: 'text', text: withNotifications(baseResponse, notifications.unreadCount) }],
         };
       }
 
       if (pc.isCommentRequired(fromColData.slug, params.to_column) && !params.comment) {
+        const baseResponse = JSON.stringify({ success: false, error: 'Comment is required for this transition', code: 'VALIDATION_ERROR' });
+        const notifications = NotificationService.checkForNotifications(roleId, projectId);
         return {
-          content: [{ type: 'text', text: JSON.stringify({ success: false, error: 'Comment is required for this transition', code: 'VALIDATION_ERROR' }) }],
+          content: [{ type: 'text', text: withNotifications(baseResponse, notifications.unreadCount) }],
         };
       }
 
@@ -449,8 +507,10 @@ export function registerTicketTools(server: McpServer, session: McpSession) {
         if ((result as any).blocker_ids) {
           errorResp.blocker_ids = (result as any).blocker_ids;
         }
+        const baseResponse = JSON.stringify(errorResp);
+        const notifications = NotificationService.checkForNotifications(roleId, projectId);
         return {
-          content: [{ type: 'text', text: JSON.stringify(errorResp) }],
+          content: [{ type: 'text', text: withNotifications(baseResponse, notifications.unreadCount) }],
         };
       }
 
@@ -459,9 +519,10 @@ export function registerTicketTools(server: McpServer, session: McpSession) {
       const newIsBlocked = TicketService.isTicketBlocked(result.ticket_id);
       const newBlockingTicketIds = TicketService.getUnresolvedDependencyIds(result.ticket_id);
       const ticketsUnblocked = result.tickets_unblocked ?? [];
-
+      const baseResponse = JSON.stringify({ success: true, data: { moved: true, ticket_id: result.ticket_id, to_column: result.to_column, new_status: { column_slug: newColumnSlug, is_blocked: newIsBlocked, blocking_ticket_ids: newBlockingTicketIds, tickets_unblocked_by_this_move: ticketsUnblocked } } });
+      const notifications = NotificationService.checkForNotifications(roleId, projectId);
       return {
-        content: [{ type: 'text', text: JSON.stringify({ success: true, data: { moved: true, ticket_id: result.ticket_id, to_column: result.to_column, new_status: { column_slug: newColumnSlug, is_blocked: newIsBlocked, blocking_ticket_ids: newBlockingTicketIds, tickets_unblocked_by_this_move: ticketsUnblocked } } }) }],
+        content: [{ type: 'text', text: withNotifications(baseResponse, notifications.unreadCount) }],
       };
     }
   );
@@ -481,36 +542,46 @@ export function registerTicketTools(server: McpServer, session: McpSession) {
       const ticketResult = TicketService.findTicketForProject(projectSlug, params.ticket_id);
 
       if (!ticketResult.ticket) {
+        const baseResponse = JSON.stringify({ success: false, error: `Ticket '${params.ticket_id}' not found`, code: 'NOT_FOUND' });
+        const notifications = NotificationService.checkForNotifications(roleId, projectId);
         return {
-          content: [{ type: 'text', text: JSON.stringify({ success: false, error: `Ticket '${params.ticket_id}' not found`, code: 'NOT_FOUND' }) }],
+          content: [{ type: 'text', text: withNotifications(baseResponse, notifications.unreadCount) }],
         };
       }
 
       const ticket = ticketResult.ticket;
       const columnSlug = pc.getColumnSlug(ticket.column_id);
       if (!columnSlug) {
+        const baseResponse = JSON.stringify({ success: false, error: 'Ticket has invalid column', code: 'INTERNAL_ERROR' });
+        const notifications = NotificationService.checkForNotifications(roleId, projectId);
         return {
-          content: [{ type: 'text', text: JSON.stringify({ success: false, error: 'Ticket has invalid column', code: 'INTERNAL_ERROR' }) }],
+          content: [{ type: 'text', text: withNotifications(baseResponse, notifications.unreadCount) }],
         };
       }
 
       const permCheck = pc.checkPermission('add_comment', columnSlug);
       if (!permCheck.allowed) {
+        const baseResponse = JSON.stringify({ success: false, error: permCheck.reason, code: 'PERMISSION_DENIED' });
+        const notifications = NotificationService.checkForNotifications(roleId, projectId);
         return {
-          content: [{ type: 'text', text: JSON.stringify({ success: false, error: permCheck.reason, code: 'PERMISSION_DENIED' }) }],
+          content: [{ type: 'text', text: withNotifications(baseResponse, notifications.unreadCount) }],
         };
       }
 
       const result = TicketService.addComment(projectSlug, params.ticket_id, params.content, { role_id: roleId });
 
       if (result.error) {
+        const baseResponse = JSON.stringify({ success: false, error: result.error, code: result.errorCode });
+        const notifications = NotificationService.checkForNotifications(roleId, projectId);
         return {
-          content: [{ type: 'text', text: JSON.stringify({ success: false, error: result.error, code: result.errorCode }) }],
+          content: [{ type: 'text', text: withNotifications(baseResponse, notifications.unreadCount) }],
         };
       }
 
+      const baseResponse = JSON.stringify({ success: true, data: result.comment });
+      const notifications = NotificationService.checkForNotifications(roleId, projectId);
       return {
-        content: [{ type: 'text', text: JSON.stringify({ success: true, data: result.comment }) }],
+        content: [{ type: 'text', text: withNotifications(baseResponse, notifications.unreadCount) }],
       };
     }
   );
@@ -533,36 +604,46 @@ export function registerTicketTools(server: McpServer, session: McpSession) {
       const ticketResult = TicketService.findTicketForProject(projectSlug, params.ticket_id);
 
       if (!ticketResult.ticket) {
+        const baseResponse = JSON.stringify({ success: false, error: `Ticket '${params.ticket_id}' not found`, code: 'NOT_FOUND' });
+        const notifications = NotificationService.checkForNotifications(roleId, projectId);
         return {
-          content: [{ type: 'text', text: JSON.stringify({ success: false, error: `Ticket '${params.ticket_id}' not found`, code: 'NOT_FOUND' }) }],
+          content: [{ type: 'text', text: withNotifications(baseResponse, notifications.unreadCount) }],
         };
       }
 
       const ticket = ticketResult.ticket;
       const columnSlug = pc.getColumnSlug(ticket.column_id);
       if (!columnSlug) {
+        const baseResponse = JSON.stringify({ success: false, error: 'Ticket has invalid column', code: 'INTERNAL_ERROR' });
+        const notifications = NotificationService.checkForNotifications(roleId, projectId);
         return {
-          content: [{ type: 'text', text: JSON.stringify({ success: false, error: 'Ticket has invalid column', code: 'INTERNAL_ERROR' }) }],
+          content: [{ type: 'text', text: withNotifications(baseResponse, notifications.unreadCount) }],
         };
       }
 
       const permCheck = pc.checkPermission('add_dependency', columnSlug);
       if (!permCheck.allowed) {
+        const baseResponse = JSON.stringify({ success: false, error: permCheck.reason, code: 'PERMISSION_DENIED' });
+        const notifications = NotificationService.checkForNotifications(roleId, projectId);
         return {
-          content: [{ type: 'text', text: JSON.stringify({ success: false, error: permCheck.reason, code: 'PERMISSION_DENIED' }) }],
+          content: [{ type: 'text', text: withNotifications(baseResponse, notifications.unreadCount) }],
         };
       }
 
       const result = TicketService.addDependency(projectSlug, params.ticket_id, params.depends_on_id, params.relation_type);
 
       if (!result.success) {
+        const baseResponse = JSON.stringify({ success: false, error: result.error, code: result.errorCode });
+        const notifications = NotificationService.checkForNotifications(roleId, projectId);
         return {
-          content: [{ type: 'text', text: JSON.stringify({ success: false, error: result.error, code: result.errorCode }) }],
+          content: [{ type: 'text', text: withNotifications(baseResponse, notifications.unreadCount) }],
         };
       }
 
+      const baseResponse = JSON.stringify({ success: true, data: { added: true, ticket_id: result.ticket_id, depends_on_id: result.depends_on_id, relation_type: params.relation_type } });
+      const notifications = NotificationService.checkForNotifications(roleId, projectId);
       return {
-        content: [{ type: 'text', text: JSON.stringify({ success: true, data: { added: true, ticket_id: result.ticket_id, depends_on_id: result.depends_on_id, relation_type: params.relation_type } }) }],
+        content: [{ type: 'text', text: withNotifications(baseResponse, notifications.unreadCount) }],
       };
     }
   );
@@ -585,36 +666,46 @@ export function registerTicketTools(server: McpServer, session: McpSession) {
       const ticketResult = TicketService.findTicketForProject(projectSlug, params.ticket_id);
 
       if (!ticketResult.ticket) {
+        const baseResponse = JSON.stringify({ success: false, error: `Ticket '${params.ticket_id}' not found`, code: 'NOT_FOUND' });
+        const notifications = NotificationService.checkForNotifications(roleId, projectId);
         return {
-          content: [{ type: 'text', text: JSON.stringify({ success: false, error: `Ticket '${params.ticket_id}' not found`, code: 'NOT_FOUND' }) }],
+          content: [{ type: 'text', text: withNotifications(baseResponse, notifications.unreadCount) }],
         };
       }
 
       const ticket = ticketResult.ticket;
       const columnSlug = pc.getColumnSlug(ticket.column_id);
       if (!columnSlug) {
+        const baseResponse = JSON.stringify({ success: false, error: 'Ticket has invalid column', code: 'INTERNAL_ERROR' });
+        const notifications = NotificationService.checkForNotifications(roleId, projectId);
         return {
-          content: [{ type: 'text', text: JSON.stringify({ success: false, error: 'Ticket has invalid column', code: 'INTERNAL_ERROR' }) }],
+          content: [{ type: 'text', text: withNotifications(baseResponse, notifications.unreadCount) }],
         };
       }
 
       const permCheck = pc.checkPermission('remove_dependency', columnSlug);
       if (!permCheck.allowed) {
+        const baseResponse = JSON.stringify({ success: false, error: permCheck.reason, code: 'PERMISSION_DENIED' });
+        const notifications = NotificationService.checkForNotifications(roleId, projectId);
         return {
-          content: [{ type: 'text', text: JSON.stringify({ success: false, error: permCheck.reason, code: 'PERMISSION_DENIED' }) }],
+          content: [{ type: 'text', text: withNotifications(baseResponse, notifications.unreadCount) }],
         };
       }
 
       const result = TicketService.removeDependency(projectSlug, params.ticket_id, params.depends_on_id, params.relation_type);
 
       if (!result.success) {
+        const baseResponse = JSON.stringify({ success: false, error: result.error, code: result.errorCode });
+        const notifications = NotificationService.checkForNotifications(roleId, projectId);
         return {
-          content: [{ type: 'text', text: JSON.stringify({ success: false, error: result.error, code: result.errorCode }) }],
+          content: [{ type: 'text', text: withNotifications(baseResponse, notifications.unreadCount) }],
         };
       }
 
+      const baseResponse = JSON.stringify({ success: true, data: { removed: true, ticket_id: result.ticket_id, depends_on_id: result.depends_on_id } });
+      const notifications = NotificationService.checkForNotifications(roleId, projectId);
       return {
-        content: [{ type: 'text', text: JSON.stringify({ success: true, data: { removed: true, ticket_id: result.ticket_id, depends_on_id: result.depends_on_id } }) }],
+        content: [{ type: 'text', text: withNotifications(baseResponse, notifications.unreadCount) }],
       };
     }
   );
@@ -633,8 +724,10 @@ export function registerTicketTools(server: McpServer, session: McpSession) {
       const ticketResult = TicketService.findTicketForProject(projectSlug, params.ticket_id);
 
       if (!ticketResult.ticket) {
+        const baseResponse = JSON.stringify({ success: false, error: `Ticket '${params.ticket_id}' not found`, code: 'NOT_FOUND' });
+        const notifications = NotificationService.checkForNotifications(roleId, projectId);
         return {
-          content: [{ type: 'text', text: JSON.stringify({ success: false, error: `Ticket '${params.ticket_id}' not found`, code: 'NOT_FOUND' }) }],
+          content: [{ type: 'text', text: withNotifications(baseResponse, notifications.unreadCount) }],
         };
       }
 
@@ -642,23 +735,29 @@ export function registerTicketTools(server: McpServer, session: McpSession) {
       const project = ticketResult.project;
       const columnSlug = pc.getColumnSlug(ticket.column_id);
       if (!columnSlug) {
+        const baseResponse = JSON.stringify({ success: false, error: 'Ticket has invalid column', code: 'INTERNAL_ERROR' });
+        const notifications = NotificationService.checkForNotifications(roleId, projectId);
         return {
-          content: [{ type: 'text', text: JSON.stringify({ success: false, error: 'Ticket has invalid column', code: 'INTERNAL_ERROR' }) }],
+          content: [{ type: 'text', text: withNotifications(baseResponse, notifications.unreadCount) }],
         };
       }
 
       const permCheck = pc.checkPermission('list_dependencies', columnSlug);
       if (!permCheck.allowed) {
+        const baseResponse = JSON.stringify({ success: false, error: permCheck.reason, code: 'PERMISSION_DENIED' });
+        const notifications = NotificationService.checkForNotifications(roleId, projectId);
         return {
-          content: [{ type: 'text', text: JSON.stringify({ success: false, error: permCheck.reason, code: 'PERMISSION_DENIED' }) }],
+          content: [{ type: 'text', text: withNotifications(baseResponse, notifications.unreadCount) }],
         };
       }
 
       const result = TicketService.getDependencies(projectSlug, params.ticket_id);
 
       if (result.error) {
+        const baseResponse = JSON.stringify({ success: false, error: result.error, code: result.errorCode });
+        const notifications = NotificationService.checkForNotifications(roleId, projectId);
         return {
-          content: [{ type: 'text', text: JSON.stringify({ success: false, error: result.error, code: result.errorCode }) }],
+          content: [{ type: 'text', text: withNotifications(baseResponse, notifications.unreadCount) }],
         };
       }
 
@@ -668,11 +767,11 @@ export function registerTicketTools(server: McpServer, session: McpSession) {
         ...dep,
         is_blocking: blockedIds.has(dep.depends_on_id),
       }));
-
+      const baseResponse = JSON.stringify({ success: true, data: enrichedDependencies });
+      const notifications = NotificationService.checkForNotifications(roleId, projectId);
       return {
-        content: [{ type: 'text', text: JSON.stringify({ success: true, data: enrichedDependencies }) }],
+        content: [{ type: 'text', text: withNotifications(baseResponse, notifications.unreadCount) }],
       };
     }
   );
-
- }
+}

@@ -28,6 +28,7 @@ Review completed features in `final_review` Kanban column. Verify they meet all 
 - Ensure the feature is production-ready before approving
 - Be thorough — you are the last quality gate before closing a ticket
 - Always move the top-level ticket you have reviewed to `done` (accept) or back to `implementation` (reject) while adding your review results as a comment. 
+- Document potential minor issues in `ISSUE_BACKLOG.md` when tickets are accepted. 
 
 ## Workflow
 
@@ -55,3 +56,6 @@ Review completed features in `final_review` Kanban column. Verify they meet all 
 - Are there unreasonable tests?
 - Does the code contain obsolete functionality, files, debug outputs or debug files that need to be cleaned up?
 - Is the test coverage sufficient?
+
+## Hints
+- Do not bother with ticket dependencies, that is the job of the teamleader. 

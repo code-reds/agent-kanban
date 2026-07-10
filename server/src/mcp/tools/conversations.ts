@@ -2,6 +2,8 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { McpSession } from '../session.js';
 import { z } from 'zod';
 import { ConversationService } from '../../services/conversation-service.js';
+import { NotificationService } from '../../services/notification-service.js';
+import { amendMCPResponseWithNotifications } from '../utils/notifications.js';
 import { getProjectBySlug } from '../../db/queries/projects.js';
 
 export function registerConversationTools(server: McpServer, session: McpSession) {
@@ -19,14 +21,22 @@ export function registerConversationTools(server: McpServer, session: McpSession
     async () => {
       const project = getProjectBySlug(projectSlug);
       if (!project) {
+        const baseResponse = JSON.stringify({ success: false, error: `Project '${projectSlug}' not found`, code: 'NOT_FOUND' });
+        const notifications = NotificationService.checkForNotifications(roleId, projectId);
         return {
-          content: [{ type: 'text', text: JSON.stringify({ success: false, error: `Project '${projectSlug}' not found`, code: 'NOT_FOUND' }) }],
+          content: [{ type: 'text', text: notifications.unreadCount > 0
+            ? amendMCPResponseWithNotifications(baseResponse, notifications.unreadCount)
+            : baseResponse }],
         };
       }
 
       const { conversations } = ConversationService.list(projectId);
+      const baseResponse = JSON.stringify({ success: true, data: conversations });
+      const notifications = NotificationService.checkForNotifications(roleId, projectId);
       return {
-        content: [{ type: 'text', text: JSON.stringify({ success: true, data: conversations }) }],
+        content: [{ type: 'text', text: notifications.unreadCount > 0
+          ? amendMCPResponseWithNotifications(baseResponse, notifications.unreadCount)
+          : baseResponse }],
       };
     }
   );
@@ -45,21 +55,36 @@ export function registerConversationTools(server: McpServer, session: McpSession
     async (params) => {
       const project = getProjectBySlug(projectSlug);
       if (!project) {
+        const baseResponse = JSON.stringify({ success: false, error: `Project '${projectSlug}' not found`, code: 'NOT_FOUND' });
+        const notifications = NotificationService.checkForNotifications(roleId, projectId);
         return {
-          content: [{ type: 'text', text: JSON.stringify({ success: false, error: `Project '${projectSlug}' not found`, code: 'NOT_FOUND' }) }],
+          content: [{ type: 'text', text: notifications.unreadCount > 0
+            ? amendMCPResponseWithNotifications(baseResponse, notifications.unreadCount)
+            : baseResponse }],
         };
       }
 
       const result = ConversationService.getById(projectId, params.conversation_id);
 
       if (result.error) {
+        const baseResponse = JSON.stringify({ success: false, error: result.error, code: result.errorCode });
+        const notifications = NotificationService.checkForNotifications(roleId, projectId);
         return {
-          content: [{ type: 'text', text: JSON.stringify({ success: false, error: result.error, code: result.errorCode }) }],
+          content: [{ type: 'text', text: notifications.unreadCount > 0
+            ? amendMCPResponseWithNotifications(baseResponse, notifications.unreadCount)
+            : baseResponse }],
         };
       }
 
+      // Mark conversation as read since the user is viewing it
+      ConversationService.markConversationAsRead(params.conversation_id, projectId);
+
+      const baseResponse = JSON.stringify({ success: true, data: result.conversation });
+      const notifications = NotificationService.checkForNotifications(roleId, projectId);
       return {
-        content: [{ type: 'text', text: JSON.stringify({ success: true, data: result.conversation }) }],
+        content: [{ type: 'text', text: notifications.unreadCount > 0
+          ? amendMCPResponseWithNotifications(baseResponse, notifications.unreadCount)
+          : baseResponse }],
       };
     }
   );
@@ -78,8 +103,12 @@ export function registerConversationTools(server: McpServer, session: McpSession
     async (params) => {
       const project = getProjectBySlug(projectSlug);
       if (!project) {
+        const baseResponse = JSON.stringify({ success: false, error: `Project '${projectSlug}' not found`, code: 'NOT_FOUND' });
+        const notifications = NotificationService.checkForNotifications(roleId, projectId);
         return {
-          content: [{ type: 'text', text: JSON.stringify({ success: false, error: `Project '${projectSlug}' not found`, code: 'NOT_FOUND' }) }],
+          content: [{ type: 'text', text: notifications.unreadCount > 0
+            ? amendMCPResponseWithNotifications(baseResponse, notifications.unreadCount)
+            : baseResponse }],
         };
       }
 
@@ -87,21 +116,33 @@ export function registerConversationTools(server: McpServer, session: McpSession
       const convResult = ConversationService.findOrCreateByRoleNames(projectId, session.role.name, params.to_role);
 
       if (convResult.error) {
+        const baseResponse = JSON.stringify({ success: false, error: convResult.error, code: convResult.errorCode });
+        const notifications = NotificationService.checkForNotifications(roleId, projectId);
         return {
-          content: [{ type: 'text', text: JSON.stringify({ success: false, error: convResult.error, code: convResult.errorCode }) }],
+          content: [{ type: 'text', text: notifications.unreadCount > 0
+            ? amendMCPResponseWithNotifications(baseResponse, notifications.unreadCount)
+            : baseResponse }],
         };
       }
 
       const result = ConversationService.sendMessage(projectId, convResult.conversation!.id, params.content, { sender_role_id: roleId });
 
       if (result.error) {
+        const baseResponse = JSON.stringify({ success: false, error: result.error, code: result.errorCode });
+        const notifications = NotificationService.checkForNotifications(roleId, projectId);
         return {
-          content: [{ type: 'text', text: JSON.stringify({ success: false, error: result.error, code: result.errorCode }) }],
+          content: [{ type: 'text', text: notifications.unreadCount > 0
+            ? amendMCPResponseWithNotifications(baseResponse, notifications.unreadCount)
+            : baseResponse }],
         };
       }
 
+      const baseResponse = JSON.stringify({ success: true, data: result.message });
+      const notifications = NotificationService.checkForNotifications(roleId, projectId);
       return {
-        content: [{ type: 'text', text: JSON.stringify({ success: true, data: result.message }) }],
+        content: [{ type: 'text', text: notifications.unreadCount > 0
+          ? amendMCPResponseWithNotifications(baseResponse, notifications.unreadCount)
+          : baseResponse }],
       };
     }
   );
@@ -121,15 +162,23 @@ export function registerConversationTools(server: McpServer, session: McpSession
 
       const project = getProjectBySlug(projectSlug);
       if (!project) {
+        const baseResponse = JSON.stringify({ success: false, error: `Project '${projectSlug}' not found`, code: 'NOT_FOUND' });
+        const notifications = NotificationService.checkForNotifications(roleId, projectId);
         return {
-          content: [{ type: 'text', text: JSON.stringify({ success: false, error: `Project '${projectSlug}' not found`, code: 'NOT_FOUND' }) }],
+          content: [{ type: 'text', text: notifications.unreadCount > 0
+            ? amendMCPResponseWithNotifications(baseResponse, notifications.unreadCount)
+            : baseResponse }],
         };
       }
 
       const result = ConversationService.fetchUnread(projectId, { limit });
 
+      const baseResponse = JSON.stringify({ success: true, data: result.messages, last_read_message_id: result.last_read_message_id });
+      const notifications = NotificationService.checkForNotifications(roleId, projectId);
       return {
-        content: [{ type: 'text', text: JSON.stringify({ success: true, data: result.messages, fetched_until_id: result.fetched_until_id }) }],
+        content: [{ type: 'text', text: notifications.unreadCount > 0
+          ? amendMCPResponseWithNotifications(baseResponse, notifications.unreadCount)
+          : baseResponse }],
       };
     }
   );

@@ -354,7 +354,7 @@ describe('API functions', () => {
 
   describe('sendMessage', () => {
     it('sends POST request with payload', async () => {
-      mockFetch({ success: true, data: { id: 5, conversation_id: 1, sender_role_id: 1, sender_role_name: 'Human', content: 'Hello', created_at: '2024-01-01', fetched_until_id: 5 } });
+      mockFetch({ success: true, data: { id: 5, conversation_id: 1, sender_role_id: 1, sender_role_name: 'Human', content: 'Hello', created_at: '2024-01-01' } });
       const result = await api.sendMessage('test-project', 1, { content: 'Hello' });
       expect(result.success).toBe(true);
       expect(result.data?.content).toBe('Hello');
@@ -363,7 +363,7 @@ describe('API functions', () => {
 
   describe('fetchUnread', () => {
     it('calls correct endpoint with params', async () => {
-      mockFetch({ success: true, data: { messages: [], fetched_until_id: 0 } });
+      mockFetch({ success: true, data: { messages: [], last_read_message_id: 0 } });
       const result = await api.fetchUnread('test-project', { limit: 50 });
       expect(result.success).toBe(true);
     });

@@ -15,6 +15,7 @@ import {
   getParentTicketById,
   getDb,
   getDescendantsBlockedByGroup,
+  getMostCriticalTickets,
 
   type TicketRow,
   type TicketWithRelations,
@@ -1198,7 +1199,7 @@ export class TicketService {
     }
 
     addStatusHistory(ticketId, fromColId, targetColumnId, roleId, null);
-    addCommentQuery(ticketId, roleId, `Moved by cascade (entire-ticket-group) from column #${fromColId} to '${targetColumnSlug}'`, 'move');
+    addCommentQuery(ticketId, roleId, comment, 'move');
   }
 
   /**
@@ -1285,16 +1286,26 @@ export class TicketService {
   }
 
   /**
-     * Get blocked ticket IDs for a project (tickets with unresolved blocked_by dependencies
-     * AND tickets with entire-ticket-group violations).
-     * Uses the ticket_blockers view for a unified, simplified query.
-     */
+      * Get blocked ticket IDs for a project (tickets with unresolved blocked_by dependencies
+      * AND tickets with entire-ticket-group violations).
+      * Uses the ticket_blockers view for a unified, simplified query.
+      */
   static getBlockedTicketIds(projectId: number): number[] {
     const db = getDb();
     const rows = db.prepare<number, { ticket_id: number }>(
       'SELECT DISTINCT ticket_id FROM ticket_blockers WHERE project_id = ?'
     ).all(projectId);
     return rows.map((r) => r.ticket_id);
+  }
+
+  /**
+      * Get the most critical next ticket IDs for a project.
+      * Uses the `most_critical_tickets` SQL view which ranks open tickets by
+      * blocker proximity, inherited priority, and blocker count.
+      * Returns at most 3 ticket IDs in criticality order.
+      */
+  static getMostCriticalTickets(projectId: number): number[] {
+    return getMostCriticalTickets(projectId);
   }
 
   /**

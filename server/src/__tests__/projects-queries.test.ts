@@ -172,7 +172,7 @@ describe('Projects Query Functions', () => {
 
       // Create conversations
       db.prepare('INSERT INTO conversations (project_id, from_role_id, to_role_id) VALUES (?, 1, 2)').run(project.id);
-      db.prepare('INSERT INTO messages (conversation_id, sender_role_id, content, fetched_until_id) VALUES (1, 1, \'Hello\', 1)');
+      db.prepare('INSERT INTO messages (conversation_id, sender_role_id, content) VALUES (1, 1, \'Hello\')');
 
       // Delete the project
       const result = deleteProject(projectSlug);

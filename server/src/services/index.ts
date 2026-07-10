@@ -11,6 +11,7 @@
 export { TicketService } from './ticket-service.js';
 export { ProjectService } from './project-service.js';
 export { ConversationService } from './conversation-service.js';
+export { NotificationService } from './notification-service.js';
 export { ColumnService } from './column-service.js';
 export { WorkflowService } from './workflow-service.js';
 export { AccessRuleService } from './access-rule-service.js';

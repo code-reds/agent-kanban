@@ -111,16 +111,32 @@ router.get('/projects/:slug/messages/unread', (req: Request, res: Response) => {
 
     const projectId = projectResult.project!.id;
     const limit = req.query.limit !== undefined ? Number(req.query.limit) : 1;
-    const fetchedUntilId = req.query.fetched_until !== undefined
-      ? Number(req.query.fetched_until)
-      : 0;
 
-    const result = ConversationService.fetchUnread(projectId, { limit, fetchedUntilId });
+    const result = ConversationService.fetchUnread(projectId, { limit });
 
     toJsonSuccess(res, {
       messages: result.messages,
-      fetched_until_id: result.fetched_until_id,
+      last_read_message_id: result.last_read_message_id,
     });
+  } catch (err) {
+    toJsonError(res, errorMessage(err), 'INTERNAL_ERROR', 500);
+  }
+});
+
+// PATCH /api/v1/projects/:slug/conversations/:id/read - Mark conversation as read
+router.patch('/projects/:slug/conversations/:id/read', (req: Request, res: Response) => {
+  try {
+    const { slug, id } = req.params as { slug: string; id: string };
+
+    const projectResult = ProjectService.get(slug);
+    if (projectResult.error) {
+      return toJsonError(res, `Project '${slug}' not found`, 'NOT_FOUND', 404);
+    }
+
+    const projectId = projectResult.project!.id;
+    ConversationService.markConversationAsRead(Number(id), projectId);
+
+    toJsonSuccess(res, { marked_as_read: true });
   } catch (err) {
     toJsonError(res, errorMessage(err), 'INTERNAL_ERROR', 500);
   }

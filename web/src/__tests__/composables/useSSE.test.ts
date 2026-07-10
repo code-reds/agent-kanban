@@ -23,6 +23,10 @@ interface MockEventSource {
   _dispatchCommentAdded: (ticketId: number, comment: Record<string, unknown>) => void;
   _dispatchDepAdded: (ticketId: number, dependsOnId: number, relationType: string) => void;
   _dispatchDepRemoved: (ticketId: number, dependsOnId: number, relationType: string) => void;
+  _dispatchConversationCreated: (conversation: Record<string, unknown>) => void;
+  _dispatchConversationMessageSent: (conversationId: number, message: Record<string, unknown>) => void;
+  _dispatchConversationReadUpdated: (conversationId: number, lastReadMessageId: number) => void;
+  _dispatchConversationDeleted: (conversationId: number) => void;
 }
 
 function createMockEventSource(url: string): MockEventSource {
@@ -78,6 +82,18 @@ function createMockEventSource(url: string): MockEventSource {
     _dispatchDepRemoved: (ticketId: number, dependsOnId: number, relationType: string) => {
       mock._dispatchEvent('ticket.dep_removed', JSON.stringify({ ticket_id: ticketId, depends_on_id: dependsOnId, relation_type: relationType, project_slug: 'test-project' }));
     },
+    _dispatchConversationCreated: (conversation: Record<string, unknown>) => {
+      mock._dispatchEvent('conversation.created', JSON.stringify({ conversation }));
+    },
+    _dispatchConversationMessageSent: (conversationId: number, message: Record<string, unknown>) => {
+      mock._dispatchEvent('conversation.message_sent', JSON.stringify({ conversation_id: conversationId, message }));
+    },
+    _dispatchConversationReadUpdated: (conversationId: number, lastReadMessageId: number) => {
+      mock._dispatchEvent('conversation.read_updated', JSON.stringify({ conversation_id: conversationId, last_read_message_id: lastReadMessageId }));
+    },
+    _dispatchConversationDeleted: (conversationId: number) => {
+      mock._dispatchEvent('conversation.deleted', JSON.stringify({ conversation_id: conversationId }));
+    },
   };
 
   eventSourceInstances.push(mock);
@@ -111,6 +127,10 @@ describe('useSSE', () => {
       handleCommentAdded: vi.fn(),
       handleDepAdded: vi.fn(),
       handleDepRemoved: vi.fn(),
+      handleConversationCreated: vi.fn(),
+      handleConversationMessageSent: vi.fn(),
+      handleConversationReadUpdated: vi.fn(),
+      handleConversationDeleted: vi.fn(),
     };
   });
 
@@ -232,6 +252,60 @@ describe('useSSE', () => {
     expect(handlers.handleCommentAdded).not.toHaveBeenCalled();
     expect(handlers.handleDepAdded).not.toHaveBeenCalled();
     expect(handlers.handleDepRemoved).not.toHaveBeenCalled();
+    expect(handlers.handleConversationCreated).not.toHaveBeenCalled();
+    expect(handlers.handleConversationMessageSent).not.toHaveBeenCalled();
+    expect(handlers.handleConversationReadUpdated).not.toHaveBeenCalled();
+    expect(handlers.handleConversationDeleted).not.toHaveBeenCalled();
+    disconnect();
+  });
+
+  it('dispatches conversation.created event to store handler', () => {
+    const { connect, disconnect } = useSSE('test-project', handlers);
+    connect();
+
+    const mockSource = eventSourceInstances[eventSourceInstances.length - 1] as MockEventSource;
+    const testConversation = { id: 1, project_id: 1, from_role_id: 1, to_role_id: 2, from_role_name: 'AI code developer', to_role_name: 'Human User' };
+
+    mockSource._dispatchConversationCreated(testConversation);
+
+    expect(handlers.handleConversationCreated).toHaveBeenCalledWith(testConversation);
+    disconnect();
+  });
+
+  it('dispatches conversation.message_sent event to store handler', () => {
+    const { connect, disconnect } = useSSE('test-project', handlers);
+    connect();
+
+    const mockSource = eventSourceInstances[eventSourceInstances.length - 1] as MockEventSource;
+    const testMessage = { id: 1, conversation_id: 1, sender_role_id: 1, sender_role_name: 'AI code developer', content: 'Hello', created_at: '2024-01-01' };
+
+    mockSource._dispatchConversationMessageSent(1, testMessage);
+
+    expect(handlers.handleConversationMessageSent).toHaveBeenCalledWith(1, testMessage);
+    disconnect();
+  });
+
+  it('dispatches conversation.read_updated event to store handler', () => {
+    const { connect, disconnect } = useSSE('test-project', handlers);
+    connect();
+
+    const mockSource = eventSourceInstances[eventSourceInstances.length - 1] as MockEventSource;
+
+    mockSource._dispatchConversationReadUpdated(3, 42);
+
+    expect(handlers.handleConversationReadUpdated).toHaveBeenCalledWith(3, 42);
+    disconnect();
+  });
+
+  it('dispatches conversation.deleted event to store handler', () => {
+    const { connect, disconnect } = useSSE('test-project', handlers);
+    connect();
+
+    const mockSource = eventSourceInstances[eventSourceInstances.length - 1] as MockEventSource;
+
+    mockSource._dispatchConversationDeleted(7);
+
+    expect(handlers.handleConversationDeleted).toHaveBeenCalledWith(7);
     disconnect();
   });
 

@@ -74,11 +74,11 @@ export function seedProjectColumns(projectId: number, roleIds: number[]): void {
   // 4=code developer, 5=code reviewer, 6=integration tester, 7=feature reviewer
   const transitions: { from: string; to: string; requiresComment: boolean; entireTicketGroup: boolean; roles: number[] }[] = [
     { from: 'human_feedback', to: 'todo', requiresComment: false, entireTicketGroup: false, roles: [1] },
-    { from: 'human_feedback', to: 'unit_review', requiresComment: true, entireTicketGroup: false, roles: [1, 2, 3] },
-    { from: 'human_feedback', to: 'integration_testing', requiresComment: true, entireTicketGroup: false, roles: [1, 2, 3] },
-    { from: 'human_feedback', to: 'final_review', requiresComment: true, entireTicketGroup: false, roles: [1, 2, 3] },
-    { from: 'todo', to: 'implementation', requiresComment: false, entireTicketGroup: false, roles: [1, 2, 3] },
-    { from: 'todo', to: 'human_feedback', requiresComment: true, entireTicketGroup: false, roles: [1, 2, 3, 4, 5, 6, 7] },
+    { from: 'human_feedback', to: 'unit_review', requiresComment: true, entireTicketGroup: false, roles: [1] },
+    { from: 'human_feedback', to: 'integration_testing', requiresComment: true, entireTicketGroup: false, roles: [1] },
+    { from: 'human_feedback', to: 'final_review', requiresComment: true, entireTicketGroup: false, roles: [1] },
+    { from: 'todo', to: 'implementation', requiresComment: false, entireTicketGroup: true, roles: [1, 2, 3] },
+    { from: 'todo', to: 'human_feedback', requiresComment: true, entireTicketGroup: false, roles: [1, 2, 3] },
     { from: 'todo', to: 'done', requiresComment: false, entireTicketGroup: false, roles: [1] },
     { from: 'implementation', to: 'unit_review', requiresComment: false, entireTicketGroup: false, roles: [1, 4] },
     { from: 'unit_review', to: 'implementation', requiresComment: true, entireTicketGroup: false, roles: [1, 5, 6] },
@@ -136,17 +136,17 @@ export function seedProjectColumns(projectId: number, roleIds: number[]): void {
     unit_review: {
       create: [1],
       edit: [1, 2, 5, 6],
-      delete: [],
+      delete: [1],
     },
     integration_testing: {
       create: [1],
       edit: [1, 2, 6],
-      delete: [],
+      delete: [1],
     },
     final_review: {
       create: [1],
       edit: [1, 2, 7],
-      delete: [],
+      delete: [1],
     },
   };
 

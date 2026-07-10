@@ -224,6 +224,18 @@ const sse = useSSE(slug, {
     // SSE events get precedence over local updates w.r.t. the blocking state.
     ticketStore.refreshDependencies(ticketId, dependsOnId, projectSlug);
   },
+  handleConversationCreated: () => {
+    // Conversation created via SSE — handled by conversation store integration
+  },
+  handleConversationMessageSent: () => {
+    // Conversation message sent via SSE — handled by conversation store integration
+  },
+  handleConversationReadUpdated: () => {
+    // Conversation read cursor updated via SSE — handled by conversation store integration
+  },
+  handleConversationDeleted: () => {
+    // Conversation deleted via SSE — handled by conversation store integration
+  },
 });
 
 onMounted(async () => {

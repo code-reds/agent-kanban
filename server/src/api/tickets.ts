@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { TicketService } from '../services/ticket-service.js';
 import { getProjectBySlug } from '../db/queries/projects.js';
+import { getDb } from '../db/database.js';
 import { errorMessage } from '../utils/errors.js';
 import { toJsonSuccess, toJsonError } from './response.js';
 import { TicketListMode } from '../types/ticket.js';
@@ -353,6 +354,52 @@ router.delete('/projects/:slug/tickets/:id/dependencies', (req: Request, res: Re
     }
 
     toJsonSuccess(res, { removed: true, ticket_id: result.ticket_id, depends_on_id: result.depends_on_id });
+  } catch (err) {
+    toJsonError(res, errorMessage(err), 'INTERNAL_ERROR', 500);
+  }
+});
+
+// GET /api/v1/projects/:slug/tickets/:id/blockers - Get blocking status
+router.get('/projects/:slug/tickets/:id/blockers', (req: Request, res: Response) => {
+  try {
+    const { slug, id } = req.params as { slug: string; id: string };
+
+    const project = getProjectBySlug(slug);
+    if (!project) {
+      return toJsonError(res, `Project '${slug}' not found`, 'NOT_FOUND', 404);
+    }
+
+    const ticket = TicketService.findTicketForProject(slug, Number(id));
+    if (!ticket.ticket) {
+      return toJsonError(res, `Ticket '${id}' not found`, 'NOT_FOUND', 404);
+    }
+
+    const ticketId = Number(id);
+    const isBlocked = TicketService.isTicketBlocked(ticketId);
+    const blockerIds = TicketService.getUnresolvedDependencyIds(ticketId);
+
+    // Query ticket_dependencies to get the relation_type for each blocker
+    let depRows: { depends_on_id: number; relation_type: string }[] = [];
+    if (blockerIds.length > 0) {
+      const db = getDb();
+      const placeholders = blockerIds.map(() => '?').join(',');
+      const params = [ticketId, ...blockerIds] as [number, ...number[]];
+      depRows = db.prepare<[number, ...number[]], { depends_on_id: number; relation_type: string }>(
+        `SELECT depends_on_id, relation_type FROM ticket_dependencies
+         WHERE ticket_id = ? AND depends_on_id IN (${placeholders})`
+      ).all(...params) as { depends_on_id: number; relation_type: string }[];
+    }
+
+    const blockingTickets = blockerIds.map((blockerId) => {
+      const dep = depRows.find((d) => d.depends_on_id === blockerId);
+      return { id: blockerId, relation_type: dep?.relation_type ?? 'blocked_by' };
+    });
+
+    toJsonSuccess(res, {
+      ticket_id: ticketId,
+      is_blocked: isBlocked,
+      blocking_tickets: blockingTickets,
+    });
   } catch (err) {
     toJsonError(res, errorMessage(err), 'INTERNAL_ERROR', 500);
   }
