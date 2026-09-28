@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { startServer, startMcpServer, stopServer, stopMcp } from '../server.js';
 import { getDb } from '../db/database.js';
 import { generateToken as generateTokenUtil, hashToken as hashTokenUtil } from '../services/auth-service.js';
@@ -17,7 +17,7 @@ describe('MCP SSE Integration Tests', () => {
   let projectId: number;
   let roleId: number;
   let client: Client | null = null;
-  let transport: SSEClientTransport | null = null;
+  let transport: StreamableHTTPClientTransport | null = null;
   let testSlug: string;
   let toolCallSlug: string;
   let toolCallToken: string;
@@ -85,9 +85,9 @@ describe('MCP SSE Integration Tests', () => {
 
   describe('MCP Client Connection', () => {
     it('should connect to MCP server with valid token', async () => {
-      const url = new URL(`http://${MCP_HOST}:${MCP_PORT}/api/v1/mcp`);
+      const url = new URL(`http://${MCP_HOST}:${MCP_PORT}/mcp`);
       
-      transport = new SSEClientTransport(url, {
+      transport = new StreamableHTTPClientTransport(url, {
         requestInit: {
           headers: {
             Authorization: `Bearer ${mcpToken}`,
@@ -114,9 +114,9 @@ describe('MCP SSE Integration Tests', () => {
     });
 
     it('should reject connection with invalid token', async () => {
-      const url = new URL(`http://${MCP_HOST}:${MCP_PORT}/api/v1/mcp`);
+      const url = new URL(`http://${MCP_HOST}:${MCP_PORT}/mcp`);
       
-      transport = new SSEClientTransport(url, {
+      transport = new StreamableHTTPClientTransport(url, {
         requestInit: {
           headers: {
             Authorization: 'Bearer invalid-token-12345',
@@ -133,9 +133,9 @@ describe('MCP SSE Integration Tests', () => {
     });
 
     it('should reject connection without token', async () => {
-      const url = new URL(`http://${MCP_HOST}:${MCP_PORT}/api/v1/mcp`);
+      const url = new URL(`http://${MCP_HOST}:${MCP_PORT}/mcp`);
       
-      transport = new SSEClientTransport(url, {});
+      transport = new StreamableHTTPClientTransport(url, {});
       
       client = new Client({
         name: 'test-client',
@@ -166,9 +166,9 @@ describe('MCP SSE Integration Tests', () => {
         VALUES (?, ?, ?, ?, '2020-01-01 00:00:00', 1)
       `).run(tokenHash, pId, rId, 'Expired token');
       
-      const url = new URL(`http://${MCP_HOST}:${MCP_PORT}/api/v1/mcp`);
+      const url = new URL(`http://${MCP_HOST}:${MCP_PORT}/mcp`);
       
-      transport = new SSEClientTransport(url, {
+      transport = new StreamableHTTPClientTransport(url, {
         requestInit: {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -187,7 +187,7 @@ describe('MCP SSE Integration Tests', () => {
 
   describe('MCP Tool Calls', () => {
     let connectedClient: Client | null = null;
-    let connectedTransport: SSEClientTransport | null = null;
+    let connectedTransport: StreamableHTTPClientTransport | null = null;
 
     beforeAll(async () => {
       const db = getDb();
@@ -210,9 +210,9 @@ describe('MCP SSE Integration Tests', () => {
         VALUES (?, ?, ?, ?, 1)
       `).run(tokenHash, pId, rId, 'Tools test token');
       
-      const url = new URL(`http://${MCP_HOST}:${MCP_PORT}/api/v1/mcp`);
+      const url = new URL(`http://${MCP_HOST}:${MCP_PORT}/mcp`);
       
-      connectedTransport = new SSEClientTransport(url, {
+      connectedTransport = new StreamableHTTPClientTransport(url, {
         requestInit: {
           headers: {
             Authorization: `Bearer ${toolCallToken}`,
@@ -336,9 +336,9 @@ describe('MCP SSE Integration Tests', () => {
           VALUES (?, ?, ?, ?, 1)
         `).run(tokenHash, pId, rId, `Session test token ${i}`);
         
-        const url = new URL(`http://${MCP_HOST}:${MCP_PORT}/api/v1/mcp`);
+        const url = new URL(`http://${MCP_HOST}:${MCP_PORT}/mcp`);
         
-        const testTransport = new SSEClientTransport(url, {
+        const testTransport = new StreamableHTTPClientTransport(url, {
           requestInit: {
             headers: {
               Authorization: `Bearer ${token}`,

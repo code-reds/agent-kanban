@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { startServer, startMcpServer, stopServer, stopMcp } from '../server.js';
 import { getDb } from '../db/database.js';
 import { runMigrations } from '../db/migrations.js';
@@ -23,7 +23,7 @@ describe('MCP list_tickets description suppression', () => {
   let projectId: number;
   let roleId: number;
   let client: Client | null = null;
-  let transport: SSEClientTransport | null = null;
+  let transport: StreamableHTTPClientTransport | null = null;
   let testSlug: string;
   let ticketId: number;
   let ticketWithLongDescription: number;
@@ -100,8 +100,8 @@ describe('MCP list_tickets description suppression', () => {
     `).run(mcpTokenHash, projectId, roleId, 'Description suppression test token');
 
     // Connect the MCP client for this test
-    const url = new URL(`http://${MCP_HOST}:${MCP_PORT}/api/v1/mcp`);
-    transport = new SSEClientTransport(url, {
+    const url = new URL(`http://${MCP_HOST}:${MCP_PORT}/mcp`);
+    transport = new StreamableHTTPClientTransport(url, {
       requestInit: {
         headers: {
           Authorization: `Bearer ${mcpToken}`,

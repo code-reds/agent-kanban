@@ -4,7 +4,10 @@ import { z } from 'zod';
 import { TicketService } from '../../services/ticket-service.js';
 import { NotificationService } from '../../services/notification-service.js';
 import { amendMCPResponseWithNotifications } from '../utils/notifications.js';
-import { getColumnById as getColumnByIdQuery } from '../../db/queries/kanban.js';
+import {
+  getColumnById as getColumnByIdQuery,
+  getColumnsByProject as getColumnsByProjectQuery,
+} from '../../db/queries/kanban.js';
 import { COLUMNS } from '../../types/columns.js';
 import { TicketListMode } from '../../types/ticket.js';
 
@@ -109,8 +112,11 @@ export function registerTicketTools(server: McpServer, session: McpSession) {
         let columnSlugs: string[];
 
         if (roleColumnId === null) {
-          // Unrestricted role (e.g., Human User, teamleader) — see all non-done/non-feedback columns
-          columnSlugs = [COLUMNS.TODO, COLUMNS.IMPLEMENTATION, COLUMNS.UNIT_REVIEW, COLUMNS.INTEGRATION_TESTING, COLUMNS.FINAL_REVIEW];
+          // Unrestricted role (e.g., Human User, teamleader) — see all non-done/non-feedback columns dynamically
+          const projectColumns = getColumnsByProjectQuery(projectIdResolved);
+          columnSlugs = projectColumns
+            .filter((col) => col.slug !== COLUMNS.DONE && col.slug !== COLUMNS.HUMAN_FEEDBACK)
+            .map((col) => col.slug);
         } else {
           // Resolve column ID to slug
           const col = getColumnByIdQuery(roleColumnId);
@@ -240,6 +246,7 @@ export function registerTicketTools(server: McpServer, session: McpSession) {
         per_page: params.per_page,
         sort_by: params.sort_by,
         sort_order: params.sort_order,
+        all_tickets: true,
         include_closed: params.include_closed ?? false,
       });
 

@@ -13,7 +13,7 @@
  */
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { startServer, startMcpServer, stopServer, stopMcp } from '../server.js';
 import { getDb, resetDb } from '../db/database.js';
 import { runMigrations } from '../db/migrations.js';
@@ -32,7 +32,7 @@ describe('Ticket #16: MCP update_ticket accepts parent_id parameter', () => {
   let projectId: number;
   let roleId: number;
   let client: Client | null = null;
-  let transport: SSEClientTransport | null = null;
+  let transport: StreamableHTTPClientTransport | null = null;
   let testSlug: string;
 
   let parentTicketId: number;
@@ -119,8 +119,8 @@ describe('Ticket #16: MCP update_ticket accepts parent_id parameter', () => {
     seedProjectColumns(anotherProjectId, allRoles.map(r => r.id));
 
     // Connect MCP client
-    const url = new URL(`http://${MCP_HOST}:${MCP_PORT}/api/v1/mcp`);
-    transport = new SSEClientTransport(url, {
+    const url = new URL(`http://${MCP_HOST}:${MCP_PORT}/mcp`);
+    transport = new StreamableHTTPClientTransport(url, {
       requestInit: {
         headers: { Authorization: `Bearer ${mcpToken}` },
       },

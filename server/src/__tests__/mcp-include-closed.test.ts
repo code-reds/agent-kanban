@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { startServer, startMcpServer, stopServer, stopMcp } from '../server.js';
 import { getDb } from '../db/database.js';
 import { runMigrations } from '../db/migrations.js';
@@ -23,7 +23,7 @@ describe('MCP list_tickets include_closed parameter', () => {
   let projectId: number;
   let roleId: number;
   let client: Client | null = null;
-  let transport: SSEClientTransport | null = null;
+  let transport: StreamableHTTPClientTransport | null = null;
   let testSlug: string;
 
   beforeAll(async () => {
@@ -93,8 +93,8 @@ describe('MCP list_tickets include_closed parameter', () => {
       VALUES (?, ?, ?, ?, 1)
     `).run(mcpTokenHash, projectId, roleId, 'include_closed test token');
 
-    const url = new URL(`http://${MCP_HOST}:${MCP_PORT}/api/v1/mcp`);
-    transport = new SSEClientTransport(url, {
+    const url = new URL(`http://${MCP_HOST}:${MCP_PORT}/mcp`);
+    transport = new StreamableHTTPClientTransport(url, {
       requestInit: {
         headers: {
           Authorization: `Bearer ${mcpToken}`,

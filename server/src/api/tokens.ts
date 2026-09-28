@@ -165,7 +165,7 @@ router.post('/projects/:slug/opencode-config', (req: Request, res: Response) => 
 
       mcpServers[serverName] = {
         type: 'remote',
-        url: `http://${serverHostVal}:${serverPortVal}/api/v1/mcp`,
+        url: `http://${serverHostVal}:${serverPortVal}/mcp`,
         enabled: true,
         oauth: false,
         headers: {
@@ -223,7 +223,7 @@ router.post('/projects/:slug/opencode-config-zip', async (req: Request, res: Res
 
       mcpServers[serverName] = {
         type: 'remote',
-        url: `http://${serverHostVal}:${serverPortVal}/api/v1/mcp`,
+        url: `http://${serverHostVal}:${serverPortVal}/mcp`,
         enabled: true,
         oauth: false,
         headers: {

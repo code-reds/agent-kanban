@@ -13,7 +13,7 @@
  */
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { getApp, startMcpServer, startServer, stopMcp, stopServer } from '../server.js';
 import { getDb, resetDb } from '../db/database.js';
 import { runMigrations } from '../db/migrations.js';
@@ -30,7 +30,7 @@ describe('Ticket #37: Child tickets inherit parent priority', () => {
   let projectId: number;
   let roleId: number;
   let client: Client | null = null;
-  let transport: SSEClientTransport | null = null;
+  let transport: StreamableHTTPClientTransport | null = null;
   let testSlug: string;
 
   beforeAll(async () => {
@@ -97,8 +97,8 @@ describe('Ticket #37: Child tickets inherit parent priority', () => {
     `).run(tokenHash, projectId, roleId, 'Ticket 37 integration test token');
 
     // Connect MCP client
-    const url = new URL(`http://${MCP_HOST}:${MCP_PORT}/api/v1/mcp`);
-    transport = new SSEClientTransport(url, {
+    const url = new URL(`http://${MCP_HOST}:${MCP_PORT}/mcp`);
+    transport = new StreamableHTTPClientTransport(url, {
       requestInit: { headers: { Authorization: `Bearer ${mcpToken}` } },
     });
     client = new Client({ name: 'ticket37-test-client', version: '1.0.0' });

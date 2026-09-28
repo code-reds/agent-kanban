@@ -12,7 +12,7 @@
  */
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { startServer, startMcpServer, stopServer, stopMcp } from '../server.js';
 import { getDb } from '../db/database.js';
 import { generateToken as generateTokenUtil, hashToken as hashTokenUtil } from '../services/auth-service.js';
@@ -30,7 +30,7 @@ describe('Ticket #12: MCP tools return slugs instead of IDs', () => {
   let projectId: number;
   let roleId: number;
   let client: Client | null = null;
-  let transport: SSEClientTransport | null = null;
+  let transport: StreamableHTTPClientTransport | null = null;
   let testSlug: string;
   let todoColId: number;
   let implColId: number;
@@ -104,8 +104,8 @@ describe('Ticket #12: MCP tools return slugs instead of IDs', () => {
     `).run(tokenHash, projectId, roleId, 'Ticket 12 integration test token');
 
     // Connect MCP client
-    const url = new URL(`http://${MCP_HOST}:${MCP_PORT}/api/v1/mcp`);
-    transport = new SSEClientTransport(url, {
+    const url = new URL(`http://${MCP_HOST}:${MCP_PORT}/mcp`);
+    transport = new StreamableHTTPClientTransport(url, {
       requestInit: {
         headers: { Authorization: `Bearer ${mcpToken}` },
       },
@@ -500,8 +500,8 @@ describe('Ticket #12: MCP tools return slugs instead of IDs', () => {
       `).run(emptyTokenHash, emptyProjectId, emptyRoleId, 'Empty project token');
 
       // Connect with empty project token
-      const emptyUrl = new URL(`http://${MCP_HOST}:${MCP_PORT}/api/v1/mcp`);
-      const emptyTransport = new SSEClientTransport(emptyUrl, {
+      const emptyUrl = new URL(`http://${MCP_HOST}:${MCP_PORT}/mcp`);
+      const emptyTransport = new StreamableHTTPClientTransport(emptyUrl, {
         requestInit: { headers: { Authorization: `Bearer ${emptyToken}` } },
       });
       const emptyClient = new Client({ name: 'empty-test', version: '1.0.0' });
